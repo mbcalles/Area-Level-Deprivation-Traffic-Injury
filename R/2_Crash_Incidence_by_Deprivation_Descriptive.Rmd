@@ -1,0 +1,2078 @@
+---
+title: "Preliminary Analysis of ICBC Claims and Deprivation"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup}
+knitr::opts_chunk$set(message = FALSE,warning = FALSE)
+library(AER)
+library(stringr)
+library(epitools)
+library(MASS)
+library(sf)
+library(readxl)
+library(broom)
+library(knitr)
+library(ggeffects)
+library(tidyverse)
+
+```
+
+
+# Data
+```{r data,message=FALSE,warning=FALSE}
+
+constant <- 1000
+
+wd <- "C:/Users/micha/UBC/Brubacher, Jeffrey - Road Safety Research Team/Projects/Pedestrian and Cycling Study - CIHR/Preliminary Inequality Analysis"
+
+bc_da <- st_read(paste0(wd,"/Processed Data/bc_da.gpkg"))
+
+ri <- read_csv(paste0(wd,"/Data/remoteness_index.csv")) %>% 
+  mutate(CSD_UID = as.character(CSDuid))
+
+dep <- read_xlsx(path = paste0(wd,"/Data/bc_scores_quintiles_EN.xlsx"),sheet = 1) %>% 
+  rename(GeoUID = PRCDDA)
+
+dep2 <- read_xlsx(path = paste0(wd,"/Data/EquivalenceTableCanada2016_ENG.xlsx"),sheet = 2)%>% 
+  rename(GeoUID = DA) %>% 
+  mutate(GeoUID = as.character(GeoUID))
+
+bc_da <- bc_da %>% left_join(dep,by="GeoUID") %>% 
+  left_join(dep2, by ="GeoUID") %>% 
+  left_join(ri, by = c("CSD_UID"))
+
+icbc <- read_csv(file = paste0(wd,"/Data/ICBC_reported_crashes_Full_Data_data.csv")) %>% 
+  filter(!is.na(Latitude)) %>% 
+  mutate(id = row_number())
+
+icbc_sf <- st_as_sf(icbc,coords = c("Longitude","Latitude"),crs = 4326) %>% 
+  st_transform(crs = 3005)
+
+# st_write(icbc_sf,  paste0(wd,"/Data/icbc_crashes.gpkg"))
+
+#10m buffer around DAs to double count crashes if they occur on the border of a census unit
+bc_da_buff <- st_buffer(bc_da,dist = 10) %>%
+  select(GeoUID)
+
+icbc_da_join <- st_join(icbc_sf,bc_da_buff,join = st_intersects) %>% as_tibble()
+
+icbc_da_duplicated <- icbc_da_join %>% 
+  group_by(id) %>% 
+  summarise(n_DAs = n()) %>% 
+  mutate(crash_weight = 1/n_DAs) #assign weight to crash that occurs on border of DAs
+
+
+icbc_da_duplicated_casualty <- icbc_da_join %>% 
+  filter(`Crash Severity` == "CASUALTY") %>% 
+  group_by(id) %>% 
+  summarise(n_DAs = n()) %>% 
+  mutate(casualty_crash_weight = 1/n_DAs) #crash weight for injury crashes
+
+icbc_da_duplicated <- left_join(icbc_da_duplicated,icbc_da_duplicated_casualty,by=c("id","n_DAs")) %>% 
+  replace_na(list(casualty_crash_weight = 0))
+
+icbc_da_join <- icbc_da_join %>% left_join(icbc_da_duplicated,by = "id") %>% 
+  mutate(weighted_crashes = `Crash Count`*crash_weight,
+         weighted_casualty_crashes =  `Crash Count`*casualty_crash_weight)
+
+
+total_crashes_by_da <- icbc_da_join %>% 
+  group_by(GeoUID) %>% 
+  summarise(n_claims = sum(weighted_crashes),
+            n_casualty_claims = sum(weighted_casualty_crashes)
+  ) 
+
+total_bicycle_crashes_by_da <- icbc_da_join %>% 
+  filter(`Cyclist Flag`=="Yes") %>% 
+  group_by(GeoUID) %>% 
+  summarise(n_cyclist_claims = sum(weighted_crashes),
+            n_cyclist_casualty_claims = sum(weighted_casualty_crashes)
+  ) 
+
+total_pedestrian_crashes_by_da <- icbc_da_join %>% 
+  filter(`Pedestrian Flag`=="Yes") %>% 
+  group_by(GeoUID) %>% 
+  summarise(n_ped_claims = sum(weighted_crashes),
+            n_ped_casualty_claims = sum(weighted_casualty_crashes)
+  ) 
+
+wide_crashes_da <- left_join(total_crashes_by_da,total_bicycle_crashes_by_da,by="GeoUID",) %>%
+  left_join(total_pedestrian_crashes_by_da,by="GeoUID")
+
+bc_da <- bc_da %>% 
+  left_join(wide_crashes_da, by="GeoUID")%>% 
+  replace_na(list(n_claims = 0, n_cyclist_claims = 0, n_ped_claims = 0,
+                  n_casualty_claims = 0, n_cyclist_casualty_claims = 0, n_ped_casualty_claims = 0)) %>% 
+  mutate(pop_inc_rate_overall = n_claims/Population*constant,
+         pop_inc_rate_cyclists = ceiling(n_cyclist_claims)/Population*constant,
+         pop_inc_rate_peds = ceiling(n_ped_claims)/Population*constant,
+         pop_casualty_inc_rate_overall = n_casualty_claims/Population*constant,
+         pop_casualty_inc_rate_cyclists = ceiling(n_cyclist_casualty_claims)/Population*constant,
+         pop_casualty_inc_rate_peds = ceiling(n_ped_casualty_claims)/Population*constant,
+         ntwrk_inc_rate_overall = n_claims/total_roads_m*constant,
+         ntwrk_inc_rate_cyclists = ceiling(total_roads_m)/total_roads_m*constant,
+         ntwrk_inc_rate_peds = ceiling(n_ped_claims)/total_roads_m*constant,
+         ntwrk_casualty_inc_rate_overall = n_casualty_claims/total_roads_m*constant,
+         ntwrk_casualty_inc_rate_cyclists = ceiling(n_cyclist_casualty_claims)/total_roads_m*constant,
+         ntwrk_casualty_inc_rate_peds = ceiling(n_ped_casualty_claims)/total_roads_m*constant
+  )
+
+
+
+
+
+
+# 
+# bc_da %>% 
+#   as_tibble()%>%
+#   mutate(claims_bins = cut(ceiling(n_casualty_claims), 
+#                            breaks = c(0,1,10,20,30,40,50,60,70,80,90,100,
+#                                       150,200,250,300,350,400,450,500,
+#                                       1000,1500,2000,3000,4000,5000,
+#                                       Inf),
+#                            include.lowest = TRUE, dig.lab = 5,right = FALSE
+#   )) %>% 
+#   group_by(claims_bins) %>% 
+#   summarise(n_DAs =n()) %>% 
+#   mutate(`%` = n_DAs/sum(n_DAs)*100) %>% 
+#   kable(caption = "Number of DAs with >0 population by total number of insurance claims involving at least one injured party",digits=2)
+
+
+random_round <- function(x){
+  
+    ifelse(x %% 1 >0, sample(c(ceiling,floor),1)[[1]](x), x)
+  
+}
+
+ data.frame(bc_da$n_casualty_claims, random_round(bc_da$n_casualty_claims),
+            bc_da$n_casualty_claims %>% round()
+            ) %>% colSums()
+
+
+ set.seed(123)
+ bc_da$n_casualty_claims_r <- random_round(bc_da$n_casualty_claims)
+
+
+bc_da %>% 
+  as_tibble()%>%
+  mutate(claims_bins = cut(n_casualty_claims_r, 
+                           breaks = c(0,1,10,20,30,40,50,60,70,80,90,100,
+                                      150,200,250,300,350,400,450,500,
+                                      1000,1500,2000,3000,4000,5000,
+                                      Inf),
+                           include.lowest = TRUE, dig.lab = 5,right = FALSE
+  )) %>% 
+  group_by(claims_bins) %>% 
+  tally() %>% 
+  mutate(`%` = n/sum(n)*100) %>% 
+  ggplot(aes(x=claims_bins,y=`%`))+
+  geom_col()
+
+
+bc_dat <- bc_da %>% as_tibble()  %>% 
+  mutate(across(contains("quint"),.fns = as.factor)) %>% 
+  mutate(log_pop_per_c = log(Population)/constant) %>% 
+  filter(Population>0)
+  
+```
+
+
+## Descriptive Statistics
+```{r}
+
+bc_da %>% 
+  st_drop_geometry() %>% 
+  summarise(n = n(),
+            mean = mean(n_casualty_claims_r),
+            var = var(n_casualty_claims_r),
+            sd = sd(n_casualty_claims_r),
+            se = sd/sqrt(n)
+  ) %>% 
+  kable(caption = "Overall Variability in DA level motor-vehicle counts")
+```
+
+
+<!-- # Percent injured Variability -->
+<!-- ## Casualty -->
+
+<!-- ```{r} -->
+
+
+<!-- bc_dat %>%  -->
+<!--   summarise(n = n(), -->
+<!--             mean = mean(pop_casualty_inc_rate_overall/constant), -->
+<!--             var = var(pop_casualty_inc_rate_overall/constant), -->
+<!--             sd = sd(pop_casualty_inc_rate_overall/constant), -->
+<!--             se = sd/sqrt(n) -->
+<!--   ) %>%  -->
+<!--   kable(caption = "Overall Variability in DA level motor-vehicle % injured") -->
+
+<!-- bc_dat %>%  -->
+<!--   summarise(n = n(), -->
+<!--             mean = mean(pop_casualty_inc_rate_cyclists/constant), -->
+<!--             var = var(pop_casualty_inc_rate_cyclists/constant), -->
+<!--             sd = sd(pop_casualty_inc_rate_cyclists/constant), -->
+<!--             se = sd/sqrt(n) -->
+<!--   ) %>%  -->
+<!--   kable(caption = "Overall Variability in DA level cyclist % injured") -->
+
+
+<!-- bc_dat %>%  -->
+<!--   summarise(n = n(), -->
+<!--             mean = mean(pop_casualty_inc_rate_peds/constant), -->
+<!--             var = var(pop_casualty_inc_rate_peds/constant), -->
+<!--             sd = sd(pop_casualty_inc_rate_peds/constant), -->
+<!--             se = sd/sqrt(n) -->
+<!--   ) %>%  -->
+<!--   kable(caption = "Overall Variability in DA level pedestrian % injured") -->
+
+
+
+
+<!-- ``` -->
+
+<!-- # Overall Incidence Variability -->
+
+<!-- ```{r} -->
+
+<!-- bc_dat <- bc_da %>%  -->
+<!--   as_tibble() %>%  -->
+<!--   filter(Population>0)  -->
+
+<!-- bc_dat %>%  -->
+<!--   summarise(n = n(), -->
+<!--             mean = mean(inc_rate_overall), -->
+<!--             var = var(inc_rate_overall), -->
+<!--             sd = sd(inc_rate_overall), -->
+<!--             se = sd/sqrt(n) -->
+<!--   ) %>%  -->
+<!--   kable(caption = "Overall Variability in DA level motor-vehicle incidence rates per 1,000") -->
+
+<!-- bc_dat %>%  -->
+<!--   summarise(n = n(), -->
+<!--             mean = mean(inc_rate_cyclists), -->
+<!--             var = var(inc_rate_cyclists), -->
+<!--             sd = sd(inc_rate_cyclists), -->
+<!--             se = sd/sqrt(n) -->
+<!--   ) %>%  -->
+<!--   kable(caption = "Overall Variability in DA level cyclist incidence rates per 1,000") -->
+
+
+<!-- bc_dat %>%  -->
+<!--   summarise(n = n(), -->
+<!--             mean = mean(inc_rate_peds), -->
+<!--             var = var(inc_rate_peds), -->
+<!--             sd = sd(inc_rate_peds), -->
+<!--             se = sd/sqrt(n) -->
+<!--   ) %>%  -->
+<!--   kable(caption = "Overall Variability in DA level pedestrian incidence rates per 1,000") -->
+
+<!-- ``` -->
+
+
+
+# Overall Associations
+
+
+```{r,fig.width=12,fig.height=7.5}
+
+bc_da <- bc_da %>% 
+  mutate(
+    # n_claims = round(n_claims),
+    # n_casualty_claims = round(n_casualty_claims),
+    highway_km = highway_m/1000,
+    arterial_km = arterial_m/1000,
+    collector_km = collector_m/1000,
+    local_km = local_m/1000,
+    roads_km = total_roads_m/1000,
+    ln_roads_km =  log(total_roads_m+0.0001),
+    ln_highway_km = log(highway_km+0.0001),
+    ln_arterial_km = log(arterial_km+0.0001),
+    ln_collector_km = log(collector_km+0.0001),
+    ln_local_km = log(local_km+0.0001),
+    population_100 = Population/100,
+    ethno_cultural_s = `Ethno-cultural composition Scores` %>% as.character() %>% as.numeric(),
+    ethno_cultural_q = case_when(`Ethno-cultural composition Quintiles`==1~"1 - Lowest",
+                                 `Ethno-cultural composition Quintiles`==5~"5 - Highest",
+                                 TRUE ~ as.character(`Ethno-cultural composition Quintiles`)
+    ) %>% as.factor(),
+    situ_vuln_s = `Situational vulnerability Scores` %>% as.character() %>% as.numeric(),
+    situ_vuln_q = case_when(`Situational vulnerability Quintiles`==1~"1 - Lowest",
+                            `Situational vulnerability Quintiles`==5~"5 - Highest",
+                            TRUE ~ as.character(`Situational vulnerability Quintiles`)
+    ) %>% as.factor(),
+    econ_dep_s = `Economic dependency Scores` %>% as.character() %>% as.numeric(),
+    econ_dep_q = case_when(`Economic dependency Quintiles`==1~"1 - Lowest",
+                           `Economic dependency Quintiles`==5~"5 - Highest",
+                           TRUE ~ as.character(`Economic dependency Quintiles`)
+    ) %>% as.factor(),
+    res_insta_s = `Residential instability Scores` %>% as.character() %>% as.numeric(),
+    res_insta_q = case_when(`Residential instability Quintiles`==1~"1 - Lowest",
+                           `Residential instability Quintiles`==5~"5 - Highest",
+                           TRUE ~ as.character(`Residential instability Quintiles`)
+    ) %>% as.factor(),
+    material_dep_s = SCOREMAT, 
+    material_dep_q = case_when(QUINTMATCR==1~"1 - Lowest",
+                             QUINTMATCR==5~"5 - Highest",
+                             TRUE ~ as.character(QUINTMATCR)
+    ) %>% as.factor(),
+    social_dep_s = SCORESOC,
+    social_dep_q = case_when(QUINTSOCCR==1~"1 - Lowest",
+                           QUINTSOCCR==5~"5 - Highest",
+                           TRUE ~ as.character(QUINTSOCCR)
+    ) %>% as.factor(),
+    lico_quintile = case_when(lico_at_quintile==1~"1 - Least Deprived",
+                              lico_at_quintile==5~"5 - Most Deprived",
+                              TRUE ~ as.character(lico_at_quintile)
+    ) %>% as.factor(),
+    unemployment_rate_quintile     = case_when(unemployment_rate_quintile    ==1~"1 - Least Deprived",
+                                               unemployment_rate_quintile    ==5~"5 - Most Deprived",
+                                               TRUE ~ as.character(unemployment_rate_quintile    )
+    ) %>% as.factor(),
+    hh_avg_income_quintile     = case_when(hh_avg_income_quintile    ==1~"1 - Least Deprived",
+                                           hh_avg_income_quintile    ==5~"5 - Most Deprived",
+                                           TRUE ~ as.character(hh_avg_income_quintile)
+    ) %>% as.factor(),
+    vis_min_quintile= case_when(vis_min_quintile    ==1~"1 - Least Deprived",
+                                vis_min_quintile    ==5~"5 - Most Deprived",
+                                TRUE ~ as.character(vis_min_quintile)
+    ) %>% as.factor(),
+    recent_imm_quintile= case_when(recent_imm_quintile    ==1~"1 - Least Deprived",
+                                   recent_imm_quintile    ==5~"5 - Most Deprived",
+                                   TRUE ~ as.character(recent_imm_quintile)
+    ) %>% as.factor(),
+    lone_parent_fam_quintile= case_when(lone_parent_fam_quintile    ==1~"1 - Least Deprived",
+                                        lone_parent_fam_quintile    ==5~"5 - Most Deprived",
+                                        TRUE ~ as.character(lone_parent_fam_quintile)
+    ) %>% as.factor(),
+    no_highschool_quintile= case_when(no_highschool_quintile    ==1~"1 - Least Deprived",
+                                      no_highschool_quintile    ==5~"5 - Most Deprived",
+                                      TRUE ~ as.character(no_highschool_quintile)
+    ) %>% as.factor(),
+    sep_div_wid_quintile= case_when(sep_div_wid_quintile    ==1~"1 - Least Deprived",
+                                    sep_div_wid_quintile    ==5~"5 - Most Deprived",
+                                    TRUE ~ as.character(sep_div_wid_quintile)
+    ) %>% as.factor(),
+    living_alone_quintile= case_when(living_alone_quintile    ==1~"1 - Least Deprived",
+                                     living_alone_quintile    ==5~"5 - Most Deprived",
+                                     TRUE ~ as.character(living_alone_quintile)
+    ) %>% as.factor(),
+    
+    
+    
+    
+    remote_index = as.numeric(Index_of_remoteness),
+    remote_index_quintile = ntile(Index_of_remoteness,n=5) %>% as.character()
+    
+  ) 
+
+
+library(cowplot)
+
+plot_bc <- function(var,var_title){
+
+main_map <- ggplot() + 
+  geom_sf(data = bc_da, aes(fill = {{var}}),lwd = 0, 
+    colour = NA) +
+  scale_fill_manual(name = var_title,values = my_colours,na.value = "grey80") + 
+  theme_void() +
+  coord_sf()+
+  theme(legend.position = c(0.00, 0.70),
+        legend.direction = "vertical",
+        legend.key.width = unit(10, "mm"),
+        legend.key.height = unit(5,"mm"),
+        legend.background = element_rect(colour = "white"),
+        panel.border = element_rect(colour = "white", fill=NA)
+  )
+
+legend <- get_legend(main_map)
+
+main_map <- main_map +
+  geom_rect(
+    aes(
+    xmin = st_bbox(metro_vancouver)[[1]],
+    ymin = st_bbox(metro_vancouver)[[2]],
+    xmax = st_bbox(metro_vancouver)[[3]],
+    ymax = st_bbox(metro_vancouver)[[4]]-15000,
+    fill = NA
+    ),
+    colour = "black",
+    alpha = 0.01,
+    size = 1
+  ) +
+  geom_rect(
+    aes(
+    xmin = st_bbox(greater_victoria)[[1]]+15000,
+    ymin = st_bbox(greater_victoria)[[2]],
+    xmax = st_bbox(greater_victoria)[[3]],
+    ymax = st_bbox(greater_victoria)[[4]],
+    fill = NA
+    ),
+    colour = "black",
+    alpha = 0.01,
+    size = 1
+  ) + 
+  theme(legend.position = "none")
+
+
+
+inset_mv <- main_map +
+  coord_sf(
+    xlim = sf::st_bbox(metro_vancouver)[c(1,3)],
+    ylim = c(st_bbox(metro_vancouver)[[2]],st_bbox(metro_vancouver)[[4]]-15000),
+    expand = FALSE
+    )+
+  theme(legend.position = "none")
+
+inset_gv <- main_map +
+  coord_sf(
+    xlim = c(st_bbox(greater_victoria)[[1]]+15000,st_bbox(greater_victoria)[[3]]),
+    ylim = sf::st_bbox(greater_victoria)[c(2,4)],
+    expand = FALSE
+    )+
+  theme(legend.position = "none")
+
+library(cowplot)
+
+ ggdraw(main_map) +
+  draw_plot({
+    legend
+  },hjust = -0.2
+  ) +
+  draw_plot(
+    {
+      inset_mv
+      },
+    # The distance along a (0,1) x-axis to draw the left edge of the plot
+    x = 0.62, 
+    # The distance along a (0,1) y-axis to draw the bottom edge of the plot
+    y = 0.55,
+    # The width and height of the plot expresed as proportion of the entire ggdraw object
+    width = 0.35, 
+    height = 0.35) + 
+    draw_plot(
+    {
+      inset_gv
+      },
+    # The distance along a (0,1) x-axis to draw the left edge of the plot
+    x = 0.025, 
+    # The distance along a (0,1) y-axis to draw the bottom edge of the plot
+    y = 0.025,
+    # The width and height of the plot expresed as proportion of the entire ggdraw object
+    width = 0.325, 
+    height = 0.325)
+
+}
+
+
+metro_vancouver <- bc_da %>% 
+  filter(CMA_UID==59933 )
+greater_victoria <- bc_da %>% 
+  filter(CMA_UID==59935 )
+my_colours = rcartocolor::carto_pal(5, "ArmyRose")
+
+material_plot <- plot_bc(material_dep_q,"Material Deprivation Index")
+social_plot <- plot_bc(social_dep_q,"Social Deprivation Index")
+ethno_cultural_plot <- plot_bc(ethno_cultural_q ,"Ethno-cultural composition")
+residential_instability_plot <- plot_bc(res_insta_q ,"Residential Instability")
+econ_dependency_plot <- plot_bc(econ_dep_q ,"Economic Dependency")
+situational_plot <- situ_vuln_map <- plot_bc(situ_vuln_q ,"Situational Vulnerability")
+
+
+save_plot("material_plot.svg",situ_vuln_map,base_width = 12,base_height = 7.5)
+save_plot("social_plot.svg",situ_vuln_map,base_width = 12,base_height = 7.5)
+save_plot("ethnocultural_plot.svg",situ_vuln_map,base_width = 12,base_height = 7.5)
+save_plot("residential_plot.svg",situ_vuln_map,base_width = 12,base_height = 7.5)
+save_plot("econ_dependency_plot.svg",situ_vuln_map,base_width = 12,base_height = 7.5)
+save_plot("situational_plot_plot.svg",situ_vuln_map,base_width = 12,base_height = 7.5)
+
+material_plot
+social_plot
+situational_plot
+ethno_cultural_plot
+residential_instability_plot
+econ_dependency_plot
+situational_plot
+
+
+library(corrplot)
+
+corrplot(cor(bc_da %>% st_drop_geometry() %>% 
+               select(population_100,highway_km,arterial_km,collector_km,local_km) %>% as.matrix(),use = "complete.obs"), method = 'number')
+
+
+corrplot(cor(bc_da %>% st_drop_geometry() %>% 
+               select(contains("_s")) %>% as.matrix(),use = "complete.obs"), method = 'number'
+          
+         )
+
+
+bc_dat <- bc_da %>%
+  as_tibble() %>% 
+  filter(!is.na(Population))
+
+
+# 
+# summary(d)
+# #calculate principal components
+# library("FactoMineR")
+# library(factoextra)
+# library("corrplot")
+# 
+# 
+# 
+# pc <- PCA(d, graph = FALSE,scale.unit = TRUE)
+# 
+# get_eigenvalue(pc)
+# fviz_eig(pc, addlabels = TRUE, ylim = c(0, 40))
+# 
+# var <- get_pca_var(pc)
+# fviz_pca_var(pc)
+# 
+# corrplot(var$cos2, is.corr=FALSE)
+# corrplot(var$contrib, is.corr=FALSE)
+# 
+# fviz_pca_ind(pc,
+#              geom.ind = "point", # show points only (nbut not "text")
+#              col.ind = bc_dat$urban_rural, # color by groups
+#              # palette = c("#00AFBB", "#E7B800", "#FC4E07"),
+#              addEllipses = TRUE, # Concentration ellipses
+#              legend.title = "Groups"
+#              )
+# 
+# 
+# bc_dat <- bc_dat %>% 
+#   mutate(pc1 = pc$ind$coord[,"Dim.1"] %>% round(5),
+#          pc2 = pc$ind$coord[,"Dim.2"] %>% round(5),
+#          pc3 = pc$ind$coord[,"Dim.3"] %>% round(5),
+#          pc4 = pc$ind$coord[,"Dim.4"] %>% round(5),
+#          pc5 = pc$ind$coord[,"Dim.5"]%>% round(5)
+#          )
+# 
+# bc_da <- bc_da %>% 
+#   left_join(bc_dat %>% select(GeoUID, starts_with("pc")))
+
+incident_rates <- function(data,outcome, denom, group,constant = 1000,...){
+  
+  names <- enquos(...)
+  outcome_enquo <- enquo(outcome)
+  group_enquo <- enquo(group)
+  # offset_term = as.character(as_label(enquo(offset)))
+  model_formula1 = paste0(as_label(outcome_enquo)," ~ ",as_label(group_enquo))
+  
+  model_formula2 = paste(map_chr(names, as_label),collapse = " + ")
+  model_formula = as.formula(paste0(model_formula1," + ",model_formula2))
+  # offset_formula = as_label(enquo(offset))
+  
+  
+  overall <- data %>%
+    group_by({{group}}) %>%
+    summarise(n = n(),
+              "{{denom}}" := sum({{denom}}, na.rm = TRUE),
+              "{{outcome}}" := sum({{outcome}},na.rm=TRUE)
+    ) %>%
+    mutate(incident_rate := {{outcome}}/{{denom}}*constant,
+           IRR := incident_rate/incident_rate[1]
+    ) %>% 
+    rename(Group={{group}}) %>% 
+    mutate(Variable = as_label(group_enquo)) %>% 
+    select(Variable, everything())
+  
+  
+  
+  model <- glm(model_formula,
+               family = "quasipoisson",
+               data = data)
+  results <- tidy(model,conf.int = TRUE,exponentiate = TRUE) %>% 
+        mutate(Variable = as_label(group_enquo))
+  
+  t <- tibble(variable =  as_label(group_enquo)) %>% 
+    mutate(crude_results = list(overall),
+           glm = list(model),
+           adjusted_results = list(results)
+           )
+  
+  return(t)
+}
+
+material_dep <- incident_rates(data = bc_dat, 
+                                outcome = n_casualty_claims_r,
+                                denom = roads_km,
+                                group = material_dep_q,
+                                constant = 1000,
+                                 # ... = remote_index_quintile,pc1,pc2,pc3,pc4,pc5
+                                ... = remote_index_quintile,population_100, highway_km,arterial_km,collector_km,local_km
+)
+
+
+
+social_dep <- incident_rates(data = bc_dat, 
+                              outcome = n_casualty_claims_r,
+                              denom = roads_km,
+                              group = social_dep_q,
+                              constant = 1000,
+                              # ... = remote_index_quintile,pc1,pc2,pc3,pc4,pc5
+                                ... = remote_index_quintile,population_100, highway_km,arterial_km,collector_km,local_km
+                              
+)
+
+econ_dep_glm <- incident_rates(data = bc_da %>% st_drop_geometry(), 
+                              outcome = n_casualty_claims_r,
+                              denom = roads_km,
+                              group = econ_dep_q,
+                              constant = 1000,
+                              # ... = remote_index_quintile,pc1,pc2,pc3,pc4,pc5
+                                ... = remote_index_quintile,population_100, highway_km,arterial_km,collector_km,local_km
+                              
+)
+
+
+ethno_cultural_glm <- incident_rates(data = bc_da %>% st_drop_geometry(), 
+                              outcome = n_casualty_claims_r,
+                              denom = roads_km,
+                              group = ethno_cultural_q,
+                              constant = 1000,
+                              # ... = remote_index_quintile,pc1,pc2,pc3,pc4,pc5
+                                ... = remote_index_quintile,population_100, highway_km,arterial_km,collector_km,local_km
+                              
+)
+
+res_insta_glm <- incident_rates(data = bc_da %>% st_drop_geometry(), 
+                              outcome = n_casualty_claims_r,
+                              denom = roads_km,
+                              group = res_insta_q,
+                              constant = 1000,
+                              # ... = remote_index_quintile,pc1,pc2,pc3,pc4,pc5
+                                ... = remote_index_quintile,population_100, highway_km,arterial_km,collector_km,local_km
+                              
+)
+
+situ_vuln_glm <- incident_rates(data = bc_da %>% st_drop_geometry(), 
+                              outcome = n_casualty_claims_r,
+                              denom = roads_km,
+                              group = situ_vuln_q,
+                              constant = 1000,
+                              # ... = remote_index_quintile,pc1,pc2,pc3,pc4,pc5
+                                ... = remote_index_quintile,population_100, highway_km,arterial_km,collector_km,local_km
+)
+
+
+
+
+bc_da %>% 
+  st_drop_geometry() %>% 
+  group_by(econ_dep_q) %>% 
+  summarise(n = n(),
+            mean = mean(`Economic dependency Scores`))
+
+# 
+# 
+# 
+# lico_at_quintile <- incident_rates(data = bc_dat, 
+#                         outcome = n_casualty_claims_r,
+#                         denom = roads_km,
+#                         group = lico_quintile,
+#                         constant = 1000,
+#                         ... = remote_index_quintile,pc1,pc2,pc3,pc4,pc5
+#                         # ... = remote_index_quintile,highway_km,arterial_km,collector_km,local_km
+#                         
+# )
+# 
+# 
+# no_highschool_quintile <- incident_rates(data = bc_dat, 
+#                         outcome = n_casualty_claims_r,
+#                         denom = roads_km,
+#                         group = no_highschool_quintile,
+#                         constant = 1000,
+#                               ... = remote_index_quintile,pc1,pc2,pc3,pc4,pc5
+#                         # ... = remote_index_quintile,highway_km,arterial_km,collector_km,local_km
+#                         
+# )
+# 
+# 
+# 
+# unemployment_rate_quintile <- incident_rates(data = bc_dat, 
+#                                               outcome = n_casualty_claims_r,
+#                                               denom = roads_km,
+#                                               group = unemployment_rate_quintile,
+#                                               constant = 1000,
+#                               ... = remote_index_quintile,pc1,pc2,pc3,pc4,pc5
+#                                               # ... = remote_index_quintile,highway_km,arterial_km,collector_km,local_km)
+#   
+#   
+# )
+# 
+# hh_avg_income_quintile <- incident_rates(data = bc_dat, 
+#                                   outcome = n_casualty_claims_r,
+#                                   denom = roads_km,
+#                                   group = hh_avg_income_quintile,
+#                                   constant = 1000,
+#                               ... = remote_index_quintile,pc1,pc2,pc3,pc4,pc5
+#                                   # ... = remote_index_quintile,highway_km,arterial_km,collector_km,local_km
+#                                   
+# )
+# 
+# 
+# vis_min_quintile <- incident_rates(data = bc_dat, 
+#                                     outcome = n_casualty_claims_r,
+#                                     denom = roads_km,
+#                                     group = vis_min_quintile,
+#                                     constant = 1000,
+#                               ... = remote_index_quintile,pc1,pc2,pc3,pc4,pc5
+#                                     # ... = pc1, pc2, pc3,pc4
+# )
+# 
+# 
+# 
+# recent_imm_quintile <- incident_rates(data = bc_dat, 
+#                                        outcome = n_casualty_claims_r,
+#                                        denom = roads_km,
+#                                        group = recent_imm_quintile,
+#                                        constant = 1000,
+#                               ... = remote_index_quintile,pc1,pc2,pc3,pc4,pc5
+#                                        # ... = remote_index_quintile,highway_km,arterial_km,collector_km,local_km
+#                                        
+#                                        
+# )
+# 
+# 
+# lone_parent_fam_quintile <- incident_rates(data = bc_dat, 
+#                                             outcome = n_casualty_claims_r,
+#                                             denom = roads_km,
+#                                             group = lone_parent_fam_quintile,
+#                                             constant = 1000,
+#                               ... = remote_index_quintile,pc1,pc2,pc3,pc4,pc5
+#                                             # ... = remote_index_quintile,highway_km,arterial_km,collector_km,local_km
+#                                             
+#                                             
+# )
+# 
+# sep_div_wid_quintile <- incident_rates(data = bc_dat, 
+#                                             outcome = n_casualty_claims_r,
+#                                             denom = roads_km,
+#                                             group = sep_div_wid_quintile,
+#                                             constant = 1000,
+#                               ... = remote_index_quintile,pc1,pc2,pc3,pc4,pc5
+#                                             # ... = remote_index_quintile,highway_km,arterial_km,collector_km,local_km
+#                                             
+#                                             
+# )
+# 
+# living_alone_quintile <- incident_rates(data = bc_dat, 
+#                                             outcome = n_casualty_claims_r,
+#                                             denom = roads_km,
+#                                             group = living_alone_quintile,
+#                                             constant = 1000,
+#                               ... = remote_index_quintile,pc1,pc2,pc3,pc4,pc5
+#                                             # ... = remote_index_quintile,highway_km,arterial_km,collector_km,local_km
+#                                             
+#                                             
+# )
+# 
+
+
+results <- bind_rows(material_dep,
+                     # no_highschool_quintile,unemployment_rate_quintile,hh_avg_income_quintile,
+                     social_dep,
+                     situ_vuln_glm,
+                     ethno_cultural_glm,
+                     res_insta_glm,
+                     
+                     econ_dep_glm
+                     # lone_parent_fam_quintile,sep_div_wid_quintile,living_alone_quintile,
+                     # lico_at_quintile, vis_min_quintile,recent_imm_quintile,
+                     
+                     
+) %>% 
+  mutate(Label = c("Material deprivation",
+                   # "% without high school diploma","% unemployed","Average income",
+                   "Social deprivation",
+                   # "% single parent family","% seperated, divorced or widowed","% living alone",
+                   # "% low income","% visible minority identity","% recent immigrants",
+                   "Situational vulnerability",
+                   "Ethno-cultural composition",
+                   "Residential instability",
+                   "Economic dependency"
+                   ),
+         Label = factor(Label, c("Material deprivation",
+                   # "% without high school diploma","% unemployed","Average income",
+                   "Social deprivation",
+                   # "% single parent family","% seperated, divorced or widowed","% living alone",
+                   # "% low income","% visible minority identity","% recent immigrants",
+                   "Situational vulnerability",
+                   "Ethno-cultural composition",
+                   "Residential instability",
+                   "Economic dependency"
+                   ))
+         )
+
+
+results %>% 
+  unnest(crude_results) %>% 
+  filter(!is.na(Group)) %>% 
+  ggplot(aes(x=Group,y=incident_rate   ,group=1)) +
+  geom_point()+
+  geom_line() +
+  facet_wrap(~Label,ncol = 2) + 
+  theme_minimal() + 
+  ylab("5-year Injury Crash Incidence per 1000 KM of road") + 
+    theme(axis.text.x = element_text(angle = 45,hjust = 1))   + 
+  ggtitle("Crude Results")
+
+adjusted <- results %>% 
+  unnest(adjusted_results) %>% 
+  filter(str_detect(term,variable))%>% 
+  mutate(term = str_remove(term,variable)) 
+
+adjusted %>% 
+    add_row(term = "1 - Lowest",estimate =1,Label = c("Material deprivation","Social deprivation","Situational vulnerability","Ethno-cultural composition","Residential instability","Economic dependency" )) %>% 
+  mutate(Label = factor(Label, levels = c("Material deprivation","Social deprivation","Situational vulnerability","Residential instability","Ethno-cultural composition","Economic dependency" ))) %>% 
+
+  ggplot(aes(x=term,y=estimate)) +
+    geom_hline(yintercept=1, lty=2, size =1,colour="grey") +  # add a dotted line at x=0 after flip
+  geom_point() +
+  geom_errorbar(aes(ymin=conf.low, ymax=conf.high), width=0.15)+  
+  theme_bw() + 
+  facet_wrap(~Label,ncol = 2) +
+  scale_y_log10()+
+  ylab("5-year Adjusted Injury Crash Relative Rate") + 
+  xlab("Deprivation Indicator") + 
+  theme(axis.text.x = element_text(angle = 45,hjust = 1))   + 
+  ggtitle(label = "Injury Incident Rate by Deprivation Indicator",subtitle = "Adjusted for spatial autocorrelation, population and length of highways, arterial, collector and local roads")
+
+
+```
+
+# Spatial Models - Quintiles
+
+
+```{r,message=FALSE,}
+
+library(spdep)
+library(INLA)
+
+bc_da_sp <- as(bc_da,"Spatial")
+
+nb <- poly2nb(bc_da_sp)
+
+
+nb2INLA("bc_da_sp.adj", nb)
+g <- inla.read.graph(filename = "bc_da_sp.adj")
+
+bc_da_sp$ui <- 1:nrow(bc_da_sp@data)
+bc_da_sp$vi <- 1:nrow(bc_da_sp@data)
+
+############### MATERIAL DEPRIVATION ############### 
+
+formula <- n_casualty_claims_r ~ material_dep_q + highway_km + arterial_km + collector_km + local_km + population_100
+# formula <- n_casualty_claims_r ~ material_dep + pc1 + pc2 + pc3 + pc4 + pc5
+
+base_material <- inla(formula,
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+
+# summary(base_material)
+
+
+
+iid_material <- inla(update(formula, . ~. + f(ui, model = "iid")),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+
+# summary(iid_material)
+
+besag_material <- inla(update(formula, . ~. + f(ui, model = "besag",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+# summary(besag_material)
+
+besagprop_material  <- inla(update(formula, . ~. + f(ui, model = "besagproper",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+# summary(besagprop_material)
+
+bym_material  <- inla(update(formula, . ~. + f(ui, model = "bym",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+summary(bym_material)
+
+bym2_material  <- inla(update(formula, . ~. + f(ui, model = "bym2",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+# summary(bym2_material)
+
+
+tibble(model = c("base",
+                 "iid",
+                 "besag",
+                 "besag.proper",
+                 "bym",
+                  "bym2"),
+       waic = c(base_material$waic$waic,
+                iid_material$waic$waic,
+                besag_material$waic$waic,
+                besagprop_material$waic$waic,
+                bym_material$waic$waic,
+                 bym2_material$waic$waic),
+         dic = c(base_material$dic$dic,
+                 iid_material$dic$dic,
+                 besag_material$dic$dic,
+                 besagprop_material$dic$dic,
+                 bym_material$dic$dic,
+               bym2_material$waic$waic)
+       ) %>% 
+  arrange(waic,dic) %>% 
+  kable(caption = "Model fits Material Deprivation")
+
+
+material_dep_results <- bym_material$summary.fixed %>% 
+  as_tibble(rownames = "term") %>% 
+  filter(str_detect(string = term, pattern = "material_dep_q")) %>% 
+  mutate(term = str_remove(term,"material_dep_q")) %>% 
+  add_row(term = "1 - Lowest",mean=0) %>% 
+  mutate(Variable = "Material Deprivation Index")
+
+
+############### SOCIAL DEPRIVATION ############### 
+
+
+formula <- n_casualty_claims_r ~ social_dep_q + highway_km + arterial_km + collector_km + local_km + population_100
+# formula <- n_casualty_claims_r ~ social_dep + pc1 + pc2 + pc3 + pc4 + pc5
+
+base_social <- inla(formula,
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+
+# summary(base_social)
+
+
+
+iid_social <- inla(update(formula, . ~. + f(ui, model = "iid")),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+
+# summary(iid_social)
+
+besag_social <- inla(update(formula, . ~. + f(ui, model = "besag",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+# summary(besag_social)
+
+besagprop_social  <- inla(update(formula, . ~. + f(ui, model = "besagproper",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+# summary(besagprop_social)
+
+bym_social  <- inla(update(formula, . ~. + f(ui, model = "bym",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+# summary(bym_social)
+
+bym2_social  <- inla(update(formula, . ~. + f(ui, model = "bym2",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+# summary(bym2_social)
+
+
+tibble(model = c("base",
+                 "iid",
+                 "besag",
+                 "besag.proper",
+                 "bym",
+                  "bym2"),
+       waic = c(base_social$waic$waic,
+                iid_social$waic$waic,
+                besag_social$waic$waic,
+                besagprop_social$waic$waic,
+                bym_social$waic$waic,
+                 bym2_social$waic$waic),
+         dic = c(base_social$dic$dic,
+                 iid_social$dic$dic,
+                 besag_social$dic$dic,
+                 besagprop_social$dic$dic,
+                 bym_social$dic$dic,
+               bym2_social$waic$waic)
+       ) %>% 
+  arrange(waic,dic)%>% 
+  kable(caption = "Model fits Social Deprivation")
+
+
+social_dep_results <- bym_social$summary.fixed %>% 
+  as_tibble(rownames = "term") %>% 
+  filter(str_detect(string = term, pattern = "social_dep_q")) %>% 
+  mutate(term = str_remove(term,"social_dep_q")) %>% 
+  add_row(term = "1 - Lowest",mean=0) %>% 
+  mutate(Variable = "Social Deprivation Index")
+
+############### SITUATIONAL VULNERABILITY ############## 
+
+formula <-  n_casualty_claims_r ~ situ_vuln_q + highway_km + arterial_km + collector_km + local_km + population_100
+# formula <- n_casualty_claims_r ~ social_dep + pc1 + pc2 + pc3 + pc4 + pc5
+
+base_situ <- inla(formula,
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+
+summary(base_situ)
+
+
+
+iid_situ <- inla(update(formula, . ~. + f(ui, model = "iid")),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+
+summary(iid_situ)
+
+besag_situ <- inla(update(formula, . ~. + f(ui, model = "besag",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+summary(besag_situ)
+
+besagprop_situ  <- inla(update(formula, . ~. + f(ui, model = "besagproper",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+summary(besagprop_situ)
+
+bym_situ  <- inla(update(formula, . ~. + f(ui, model = "bym",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+summary(bym_situ)
+
+bym2_situ  <- inla(update(formula, . ~. + f(ui, model = "bym2",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+summary(bym2_situ)
+
+
+tibble(model = c("base",
+                 "iid",
+                 "besag",
+                 "besag.proper",
+                 "bym",
+                  "bym2"),
+       waic = c(base_situ$waic$waic,
+                iid_situ$waic$waic,
+                besag_situ$waic$waic,
+                besagprop_situ$waic$waic,
+                bym_situ$waic$waic,
+                 bym2_situ$waic$waic),
+         dic = c(base_situ$dic$dic,
+                 iid_situ$dic$dic,
+                 besag_situ$dic$dic,
+                 besagprop_situ$dic$dic,
+                 bym_situ$dic$dic,
+               bym2_situ$waic$waic)
+       ) %>% 
+  arrange(waic,dic)
+
+
+
+situ_results <- bym_situ$summary.fixed %>% 
+  as_tibble(rownames = "term") %>% 
+  filter(str_detect(string = term, pattern = "situ_vuln_q")) %>% 
+  mutate(term = str_remove(term,"situ_vuln_q")) %>% 
+  add_row(term = "1 - Lowest",mean=0) %>% 
+  mutate(Variable = "Situtaional vulnerability")
+
+############### ETHNOCULTURAL COMPOSITION ############## 
+
+formula <-  n_casualty_claims_r ~ ethno_cultural_q + highway_km + arterial_km + collector_km + local_km + population_100
+# formula <- n_casualty_claims_r ~ social_dep + pc1 + pc2 + pc3 + pc4 + pc5
+
+base_ethno <- inla(formula,
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+
+summary(base_ethno)
+
+
+
+iid_ethno <- inla(update(formula, . ~. + f(ui, model = "iid")),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+
+summary(iid_ethno)
+
+besag_ethno <- inla(update(formula, . ~. + f(ui, model = "besag",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+summary(besag_ethno)
+
+besagprop_ethno  <- inla(update(formula, . ~. + f(ui, model = "besagproper",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+summary(besagprop_ethno)
+
+bym_ethno  <- inla(update(formula, . ~. + f(ui, model = "bym",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+summary(bym_ethno)
+
+bym2_ethno  <- inla(update(formula, . ~. + f(ui, model = "bym2",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+summary(bym2_ethno)
+
+
+tibble(model = c("base",
+                 "iid",
+                 "besag",
+                 "besag.proper",
+                 "bym",
+                  "bym2"),
+       waic = c(base_ethno$waic$waic,
+                iid_ethno$waic$waic,
+                besag_ethno$waic$waic,
+                besagprop_ethno$waic$waic,
+                bym_ethno$waic$waic,
+                 bym2_ethno$waic$waic),
+         dic = c(base_ethno$dic$dic,
+                 iid_ethno$dic$dic,
+                 besag_ethno$dic$dic,
+                 besagprop_ethno$dic$dic,
+                 bym_ethno$dic$dic,
+               bym2_ethno$waic$waic)
+       ) %>% 
+  arrange(waic,dic)
+
+
+
+ethno_results <- bym_ethno$summary.fixed %>% 
+  as_tibble(rownames = "term") %>% 
+  filter(str_detect(string = term, pattern = "ethno_cultural_q")) %>% 
+  mutate(term = str_remove(term,"ethno_cultural_q")) %>% 
+  add_row(term = "1 - Lowest",mean=0) %>% 
+  mutate(Variable = "Ethnocultural composition")
+
+############### RESIDENTIAL INSTABILITY ############## 
+
+formula <-  n_casualty_claims_r ~ res_insta_q + highway_km + arterial_km + collector_km + local_km + population_100
+# formula <- n_casualty_claims_r ~ social_dep + pc1 + pc2 + pc3 + pc4 + pc5
+
+base_res <- inla(formula,
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+
+summary(base_res)
+
+
+
+iid_res <- inla(update(formula, . ~. + f(ui, model = "iid")),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+
+summary(iid_res)
+
+besag_res <- inla(update(formula, . ~. + f(ui, model = "besag",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+summary(besag_res)
+
+besagprop_res  <- inla(update(formula, . ~. + f(ui, model = "besagproper",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+summary(besagprop_res)
+
+bym_res  <- inla(update(formula, . ~. + f(ui, model = "bym",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+summary(bym_res)
+
+bym2_res  <- inla(update(formula, . ~. + f(ui, model = "bym2",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+summary(bym2_res)
+
+
+tibble(model = c("base",
+                 "iid",
+                 "besag",
+                 "besag.proper",
+                 "bym",
+                  "bym2"),
+       waic = c(base_res$waic$waic,
+                iid_res$waic$waic,
+                besag_res$waic$waic,
+                besagprop_res$waic$waic,
+                bym_res$waic$waic,
+                 bym2_res$waic$waic),
+         dic = c(base_res$dic$dic,
+                 iid_res$dic$dic,
+                 besag_res$dic$dic,
+                 besagprop_res$dic$dic,
+                 bym_res$dic$dic,
+               bym2_res$waic$waic)
+       ) %>% 
+  arrange(waic,dic)
+
+
+
+res_results <- bym_res$summary.fixed %>% 
+  as_tibble(rownames = "term") %>% 
+  filter(str_detect(string = term, pattern = "res_insta_q")) %>% 
+  mutate(term = str_remove(term,"res_insta_q")) %>% 
+  add_row(term = "1 - Lowest",mean=0) %>% 
+  mutate(Variable = "Residential instability")
+
+
+###############  RESIDENTIAL INSTABILITY ############## 
+
+formula <-  n_casualty_claims_r ~ econ_dep_q + highway_km + arterial_km + collector_km + local_km + population_100
+# formula <- n_casualty_claims_r ~ social_dep + pc1 + pc2 + pc3 + pc4 + pc5
+
+base_depend <- inla(formula,
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+
+summary(base_depend)
+
+
+
+iid_depend <- inla(update(formula, . ~. + f(ui, model = "iid")),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+
+summary(iid_depend)
+
+besag_depend <- inla(update(formula, . ~. + f(ui, model = "besag",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+summary(besag_depend)
+
+besagprop_depend  <- inla(update(formula, . ~. + f(ui, model = "besagproper",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+summary(besagprop_depend)
+
+bym_depend  <- inla(update(formula, . ~. + f(ui, model = "bym",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+summary(bym_depend)
+
+bym2_depend  <- inla(update(formula, . ~. + f(ui, model = "bym2",graph = g)),
+  family = "poisson", 
+  data = bc_da_sp@data, 
+    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+  control.predictor = list(compute = TRUE)
+)
+summary(bym2_depend)
+
+
+tibble(model = c("base",
+                 "iid",
+                 "besag",
+                 "besag.proper",
+                 "bym",
+                  "bym2"),
+       waic = c(base_depend$waic$waic,
+                iid_depend$waic$waic,
+                besag_depend$waic$waic,
+                besagprop_depend$waic$waic,
+                bym_depend$waic$waic,
+                 bym2_depend$waic$waic),
+         dic = c(base_depend$dic$dic,
+                 iid_depend$dic$dic,
+                 besag_depend$dic$dic,
+                 besagprop_depend$dic$dic,
+                 bym_depend$dic$dic,
+               bym2_depend$waic$waic)
+       ) %>% 
+  arrange(waic,dic)
+
+
+
+depend_results <- bym_depend$summary.fixed %>% 
+  as_tibble(rownames = "term") %>% 
+  filter(str_detect(string = term, pattern = "econ_dep_q")) %>% 
+  mutate(term = str_remove(term,"econ_dep_q")) %>% 
+  add_row(term = "1 - Lowest",mean=0) %>% 
+  mutate(Variable = "Economic dependency")
+
+
+
+bind_rows(material_dep_results,social_dep_results,
+          situ_results,ethno_results,res_results,depend_results) %>%
+  ggplot(aes(x=term,y=exp(mean))) +
+    geom_hline(yintercept=1, lty=2, size =1,colour="grey") +  # add a dotted line at x=0 after flip
+  geom_point() +
+  geom_errorbar(aes(ymin=exp(`0.025quant`), ymax=exp(`0.975quant`)), width=0.25)+  
+  theme_bw()+
+  scale_y_log10()+
+    labs(y="5-year Adjusted Traffic Injury Incidence Rate Ratio",x="Material Deprivation Index Quintile") + 
+    theme(axis.text.x = element_text(angle = 45,hjust = 1))   + 
+  ggtitle("Adjusted Results: Spatial Model")+
+  facet_wrap(~Variable)
+
+
+
+
+```
+
+<!-- #Spatial Models - Score -->
+
+<!-- ```{r,message=FALSE,} -->
+
+<!-- ############### MATERIAL DEPRIVATION ###############  -->
+
+<!-- bc_da_sp@data$social_dep_sd <- bc_da_sp@data$social_dep_s / sd(bc_da_sp@data$social_dep_s,na.rm = TRUE) -->
+<!-- bc_da_sp@data$material_dep_sd <- bc_da_sp@data$material_dep_s / sd(bc_da_sp@data$material_dep_s,na.rm = TRUE) -->
+
+
+<!-- formula <- n_casualty_claims_r ~ material_dep_sd + highway_km + arterial_km + collector_km + local_km + population_100 -->
+<!-- # formula <- n_casualty_claims_r ~ material_dep + pc1 + pc2 + pc3 + pc4 + pc5 -->
+
+<!-- base_material <- inla(formula, -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+
+<!-- # summary(base_material) -->
+
+
+
+<!-- iid_material <- inla(update(formula, . ~. + f(ui, model = "iid")), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+
+<!-- # summary(iid_material) -->
+
+<!-- besag_material <- inla(update(formula, . ~. + f(ui, model = "besag",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- # summary(besag_material) -->
+
+<!-- besagprop_material  <- inla(update(formula, . ~. + f(ui, model = "besagproper",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- # summary(besagprop_material) -->
+
+<!-- bym_material  <- inla(update(formula, . ~. + f(ui, model = "bym",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- summary(bym_material) -->
+
+<!-- bym2_material  <- inla(update(formula, . ~. + f(ui, model = "bym2",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- # summary(bym2_material) -->
+
+
+<!-- tibble(model = c("base", -->
+<!--                  "iid", -->
+<!--                  "besag", -->
+<!--                  "besag.proper", -->
+<!--                  "bym", -->
+<!--                   "bym2"), -->
+<!--        waic = c(base_material$waic$waic, -->
+<!--                 iid_material$waic$waic, -->
+<!--                 besag_material$waic$waic, -->
+<!--                 besagprop_material$waic$waic, -->
+<!--                 bym_material$waic$waic, -->
+<!--                  bym2_material$waic$waic), -->
+<!--          dic = c(base_material$dic$dic, -->
+<!--                  iid_material$dic$dic, -->
+<!--                  besag_material$dic$dic, -->
+<!--                  besagprop_material$dic$dic, -->
+<!--                  bym_material$dic$dic, -->
+<!--                bym2_material$waic$waic) -->
+<!--        ) %>%  -->
+<!--   arrange(waic,dic) %>%  -->
+<!--   kable(caption = "Model fits Material Deprivation") -->
+
+
+<!-- material_dep_results <- bym_material$summary.fixed %>%  -->
+<!--   as_tibble(rownames = "term") %>%  -->
+<!--   filter(str_detect(string = term, pattern = "material_dep")) %>%  -->
+<!--   mutate(term = str_remove(term,"material_dep")) %>%  -->
+<!--   add_row(term = "1 - Lowest",mean=0) %>%  -->
+<!--   mutate(Variable = "Material Deprivation Index") -->
+
+
+<!-- ############### SOCIAL DEPRIVATION ###############  -->
+
+
+<!-- formula <- n_casualty_claims_r ~ social_dep_s + highway_km + arterial_km + collector_km + local_km + population_100 -->
+<!-- # formula <- n_casualty_claims_r ~ social_dep + pc1 + pc2 + pc3 + pc4 + pc5 -->
+
+<!-- base_social <- inla(formula, -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+
+<!-- # summary(base_social) -->
+
+
+
+<!-- iid_social <- inla(update(formula, . ~. + f(ui, model = "iid")), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+
+<!-- # summary(iid_social) -->
+
+<!-- besag_social <- inla(update(formula, . ~. + f(ui, model = "besag",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- # summary(besag_social) -->
+
+<!-- besagprop_social  <- inla(update(formula, . ~. + f(ui, model = "besagproper",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- # summary(besagprop_social) -->
+
+<!-- bym_social  <- inla(update(formula, . ~. + f(ui, model = "bym",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- summary(bym_social) -->
+
+<!-- bym2_social  <- inla(update(formula, . ~. + f(ui, model = "bym2",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- # summary(bym2_social) -->
+
+
+<!-- tibble(model = c("base", -->
+<!--                  "iid", -->
+<!--                  "besag", -->
+<!--                  "besag.proper", -->
+<!--                  "bym", -->
+<!--                   "bym2"), -->
+<!--        waic = c(base_social$waic$waic, -->
+<!--                 iid_social$waic$waic, -->
+<!--                 besag_social$waic$waic, -->
+<!--                 besagprop_social$waic$waic, -->
+<!--                 bym_social$waic$waic, -->
+<!--                  bym2_social$waic$waic), -->
+<!--          dic = c(base_social$dic$dic, -->
+<!--                  iid_social$dic$dic, -->
+<!--                  besag_social$dic$dic, -->
+<!--                  besagprop_social$dic$dic, -->
+<!--                  bym_social$dic$dic, -->
+<!--                bym2_social$waic$waic) -->
+<!--        ) %>%  -->
+<!--   arrange(waic,dic)%>%  -->
+<!--   kable(caption = "Model fits Social Deprivation") -->
+
+
+<!-- social_dep_results <- bym_social$summary.fixed %>%  -->
+<!--   as_tibble(rownames = "term") %>%  -->
+<!--   filter(str_detect(string = term, pattern = "social_dep")) %>%  -->
+<!--   mutate(term = str_remove(term,"social_dep")) %>%  -->
+<!--   add_row(term = "1 - Lowest",mean=0) %>%  -->
+<!--   mutate(Variable = "Social Deprivation Index") -->
+
+<!-- ############### SITUATIONAL VULNERABILITY ##############  -->
+
+<!-- formula <-  n_casualty_claims_r ~ situ_vuln_s + highway_km + arterial_km + collector_km + local_km + population_100 -->
+<!-- # formula <- n_casualty_claims_r ~ social_dep + pc1 + pc2 + pc3 + pc4 + pc5 -->
+
+<!-- base_situ <- inla(formula, -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+
+<!-- summary(base_situ) -->
+
+
+
+<!-- iid_situ <- inla(update(formula, . ~. + f(ui, model = "iid")), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+
+<!-- summary(iid_situ) -->
+
+<!-- besag_situ <- inla(update(formula, . ~. + f(ui, model = "besag",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- summary(besag_situ) -->
+
+<!-- besagprop_situ  <- inla(update(formula, . ~. + f(ui, model = "besagproper",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- summary(besagprop_situ) -->
+
+<!-- bym_situ  <- inla(update(formula, . ~. + f(ui, model = "bym",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- summary(bym_situ) -->
+
+<!-- bym2_situ  <- inla(update(formula, . ~. + f(ui, model = "bym2",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- summary(bym2_situ) -->
+
+
+<!-- tibble(model = c("base", -->
+<!--                  "iid", -->
+<!--                  "besag", -->
+<!--                  "besag.proper", -->
+<!--                  "bym", -->
+<!--                   "bym2"), -->
+<!--        waic = c(base_situ$waic$waic, -->
+<!--                 iid_situ$waic$waic, -->
+<!--                 besag_situ$waic$waic, -->
+<!--                 besagprop_situ$waic$waic, -->
+<!--                 bym_situ$waic$waic, -->
+<!--                  bym2_situ$waic$waic), -->
+<!--          dic = c(base_situ$dic$dic, -->
+<!--                  iid_situ$dic$dic, -->
+<!--                  besag_situ$dic$dic, -->
+<!--                  besagprop_situ$dic$dic, -->
+<!--                  bym_situ$dic$dic, -->
+<!--                bym2_situ$waic$waic) -->
+<!--        ) %>%  -->
+<!--   arrange(waic,dic) -->
+
+
+
+<!-- situ_results <- bym_situ$summary.fixed %>%  -->
+<!--   as_tibble(rownames = "term") %>%  -->
+<!--   filter(str_detect(string = term, pattern = "situ_vuln_s")) %>%  -->
+<!--   mutate(term = str_remove(term,"situ_vuln_s")) %>%  -->
+<!--   add_row(term = "1 - Lowest",mean=0) %>%  -->
+<!--   mutate(Variable = "Situtaional vulnerability") -->
+
+<!-- ############### ETHNOCULTURAL COMPOSITION ##############  -->
+
+<!-- formula <-  n_casualty_claims_r ~ ethno_cultural_s + highway_km + arterial_km + collector_km + local_km + population_100 -->
+<!-- # formula <- n_casualty_claims_r ~ social_dep + pc1 + pc2 + pc3 + pc4 + pc5 -->
+
+<!-- base_ethno <- inla(formula, -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+
+<!-- summary(base_ethno) -->
+
+
+
+<!-- iid_ethno <- inla(update(formula, . ~. + f(ui, model = "iid")), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+
+<!-- summary(iid_ethno) -->
+
+<!-- besag_ethno <- inla(update(formula, . ~. + f(ui, model = "besag",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- summary(besag_ethno) -->
+
+<!-- besagprop_ethno  <- inla(update(formula, . ~. + f(ui, model = "besagproper",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- summary(besagprop_ethno) -->
+
+<!-- bym_ethno  <- inla(update(formula, . ~. + f(ui, model = "bym",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- summary(bym_ethno) -->
+
+<!-- bym2_ethno  <- inla(update(formula, . ~. + f(ui, model = "bym2",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- summary(bym2_ethno) -->
+
+
+<!-- tibble(model = c("base", -->
+<!--                  "iid", -->
+<!--                  "besag", -->
+<!--                  "besag.proper", -->
+<!--                  "bym", -->
+<!--                   "bym2"), -->
+<!--        waic = c(base_ethno$waic$waic, -->
+<!--                 iid_ethno$waic$waic, -->
+<!--                 besag_ethno$waic$waic, -->
+<!--                 besagprop_ethno$waic$waic, -->
+<!--                 bym_ethno$waic$waic, -->
+<!--                  bym2_ethno$waic$waic), -->
+<!--          dic = c(base_ethno$dic$dic, -->
+<!--                  iid_ethno$dic$dic, -->
+<!--                  besag_ethno$dic$dic, -->
+<!--                  besagprop_ethno$dic$dic, -->
+<!--                  bym_ethno$dic$dic, -->
+<!--                bym2_ethno$waic$waic) -->
+<!--        ) %>%  -->
+<!--   arrange(waic,dic) -->
+
+
+
+<!-- ethno_results <- bym_ethno$summary.fixed %>%  -->
+<!--   as_tibble(rownames = "term") %>%  -->
+<!--   filter(str_detect(string = term, pattern = "ethno_cultural_s")) %>%  -->
+<!--   mutate(term = str_remove(term,"ethno_cultural_s")) %>%  -->
+<!--   add_row(term = "1 - Lowest",mean=0) %>%  -->
+<!--   mutate(Variable = "Ethnocultural composition") -->
+
+<!-- ############### RESIDENTIAL INSTABILITY ##############  -->
+
+<!-- formula <-  n_casualty_claims_r ~ res_insta_s + highway_km + arterial_km + collector_km + local_km + population_100 -->
+<!-- # formula <- n_casualty_claims_r ~ social_dep + pc1 + pc2 + pc3 + pc4 + pc5 -->
+
+<!-- base_res <- inla(formula, -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+
+<!-- summary(base_res) -->
+
+
+
+<!-- iid_res <- inla(update(formula, . ~. + f(ui, model = "iid")), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+
+<!-- summary(iid_res) -->
+
+<!-- besag_res <- inla(update(formula, . ~. + f(ui, model = "besag",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- summary(besag_res) -->
+
+<!-- besagprop_res  <- inla(update(formula, . ~. + f(ui, model = "besagproper",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- summary(besagprop_res) -->
+
+<!-- bym_res  <- inla(update(formula, . ~. + f(ui, model = "bym",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- summary(bym_res) -->
+
+<!-- bym2_res  <- inla(update(formula, . ~. + f(ui, model = "bym2",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- summary(bym2_res) -->
+
+
+<!-- tibble(model = c("base", -->
+<!--                  "iid", -->
+<!--                  "besag", -->
+<!--                  "besag.proper", -->
+<!--                  "bym", -->
+<!--                   "bym2"), -->
+<!--        waic = c(base_res$waic$waic, -->
+<!--                 iid_res$waic$waic, -->
+<!--                 besag_res$waic$waic, -->
+<!--                 besagprop_res$waic$waic, -->
+<!--                 bym_res$waic$waic, -->
+<!--                  bym2_res$waic$waic), -->
+<!--          dic = c(base_res$dic$dic, -->
+<!--                  iid_res$dic$dic, -->
+<!--                  besag_res$dic$dic, -->
+<!--                  besagprop_res$dic$dic, -->
+<!--                  bym_res$dic$dic, -->
+<!--                bym2_res$waic$waic) -->
+<!--        ) %>%  -->
+<!--   arrange(waic,dic) -->
+
+
+
+<!-- res_results <- bym_res$summary.fixed %>%  -->
+<!--   as_tibble(rownames = "term") %>%  -->
+<!--   filter(str_detect(string = term, pattern = "res_insta_s")) %>%  -->
+<!--   mutate(term = str_remove(term,"res_insta_s")) %>%  -->
+<!--   add_row(term = "1 - Lowest",mean=0) %>%  -->
+<!--   mutate(Variable = "Residential instability") -->
+
+
+<!-- ###############  RESIDENTIAL INSTABILITY ##############  -->
+
+<!-- formula <-  n_casualty_claims_r ~ econ_dep_s + highway_km + arterial_km + collector_km + local_km + population_100 -->
+<!-- # formula <- n_casualty_claims_r ~ social_dep + pc1 + pc2 + pc3 + pc4 + pc5 -->
+
+<!-- base_depend <- inla(formula, -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+
+<!-- summary(base_depend) -->
+
+
+
+<!-- iid_depend <- inla(update(formula, . ~. + f(ui, model = "iid")), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+
+<!-- summary(iid_depend) -->
+
+<!-- besag_depend <- inla(update(formula, . ~. + f(ui, model = "besag",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- summary(besag_depend) -->
+
+<!-- besagprop_depend  <- inla(update(formula, . ~. + f(ui, model = "besagproper",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- summary(besagprop_depend) -->
+
+<!-- bym_depend  <- inla(update(formula, . ~. + f(ui, model = "bym",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- summary(bym_depend) -->
+
+<!-- bym2_depend  <- inla(update(formula, . ~. + f(ui, model = "bym2",graph = g)), -->
+<!--   family = "poisson",  -->
+<!--   data = bc_da_sp@data,  -->
+<!--     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE), -->
+<!--   control.predictor = list(compute = TRUE) -->
+<!-- ) -->
+<!-- summary(bym2_depend) -->
+
+
+<!-- tibble(model = c("base", -->
+<!--                  "iid", -->
+<!--                  "besag", -->
+<!--                  "besag.proper", -->
+<!--                  "bym", -->
+<!--                   "bym2"), -->
+<!--        waic = c(base_depend$waic$waic, -->
+<!--                 iid_depend$waic$waic, -->
+<!--                 besag_depend$waic$waic, -->
+<!--                 besagprop_depend$waic$waic, -->
+<!--                 bym_depend$waic$waic, -->
+<!--                  bym2_depend$waic$waic), -->
+<!--          dic = c(base_depend$dic$dic, -->
+<!--                  iid_depend$dic$dic, -->
+<!--                  besag_depend$dic$dic, -->
+<!--                  besagprop_depend$dic$dic, -->
+<!--                  bym_depend$dic$dic, -->
+<!--                bym2_depend$waic$waic) -->
+<!--        ) %>%  -->
+<!--   arrange(waic,dic) -->
+
+
+
+<!-- depend_results <- bym_depend$summary.fixed %>%  -->
+<!--   as_tibble(rownames = "term") %>%  -->
+<!--   filter(str_detect(string = term, pattern = "econ_dep_s")) %>%  -->
+<!--   mutate(term = str_remove(term,"econ_dep_s")) %>%  -->
+<!--   add_row(term = "1 - Lowest",mean=0) %>%  -->
+<!--   mutate(Variable = "Economic dependency") -->
+
+
+
+<!-- bind_rows(material_dep_results,social_dep_results, -->
+<!--           situ_results,ethno_results,res_results,depend_results) %>% -->
+<!--   ggplot(aes(x=term,y=exp(mean))) + -->
+<!--     geom_hline(yintercept=1, lty=2, size =1,colour="grey") +  # add a dotted line at x=0 after flip -->
+<!--   geom_point() + -->
+<!--   geom_errorbar(aes(ymin=exp(`0.025quant`), ymax=exp(`0.975quant`)), width=0.25)+   -->
+<!--   theme_bw()+ -->
+<!--   scale_y_log10()+ -->
+<!--     labs(y="5-year Adjusted Traffic Injury Incidence Rate Ratio",x="Material Deprivation Index Quintile") +  -->
+<!--     theme(axis.text.x = element_text(angle = 45,hjust = 1))   +  -->
+<!--   ggtitle("Adjusted Results: Spatial Model")+ -->
+<!--   facet_wrap(~Variable) -->
+
+
+
+
+<!-- ``` -->
+
+
+<!-- # Geographically weighted regression  -->
+
+
+<!-- ```{r} -->
+<!-- library(spgwr) -->
+<!-- library(sp) -->
+
+<!-- xy <- st_centroid(bc_da) %>% st_coordinates() -->
+
+<!-- bc_da$X <- xy[,1] -->
+<!-- bc_da$Y <- xy[,2] -->
+<!-- bc_da$n_claims_r <-  ceiling(bc_da$n_casualty_claims_r) -->
+
+<!-- bc_da_sp <- as(bc_da,"Spatial") -->
+
+
+<!-- bc_da_sp <- bc_da_sp[!is.na(bc_da_sp@data$material_dep),] -->
+<!-- bc_da_sp@data$material_dep <- as.factor(bc_da_sp$material_dep) -->
+
+
+<!-- gbwG <- ggwr.sel(n_claims_r ~ material_dep + highway_km  + arterial_km  + collector_km  + local_km, data =bc_da_sp , family = "quasipoisson",adapt = TRUE, gweight = gwr.Gauss, coords = cbind(bc_da_sp$X, bc_da_sp$Y),verbose = FALSE) -->
+
+<!-- gbwG#0.7572087  -->
+
+<!-- ggwr_ex  <- ggwr(n_claims_r ~ material_dep + highway_km + arterial_km + collector_km + local_km, data = bc_da_sp, family = "quasipoisson", adapt = gbwG) -->
+
+<!-- ggwr_ex -->
+
+
+<!-- summary(ggwr_ex$SDF) -->
+
+<!-- exp(ggwr_ex$SDF$lico_at_quintile4) %>% summary() -->
+
+<!-- bc_da_sp$material_dep5 <- exp(ggwr_ex$SDF$material_dep5...Most.Deprived) -->
+
+<!-- summary(bc_da_sp$material_dep5) -->
+
+<!-- bc_da_na_Rm <- st_as_sf(bc_da_sp) -->
+
+<!-- # zoom_na_Rm$claims_bins <- cut(zoom_na_Rm$n_claims,breaks = quantile(zoom_na_Rm$n_claims),probs = seq(0,1,by=1/5)),include.lowest = TRUE) -->
+<!-- my_colors = rcartocolor::carto_pal(7, "ArmyRose") -->
+
+<!-- ggplot() +  -->
+<!--   geom_sf(data = bc_da_na_Rm, aes(fill = material_dep5),size=0.05) + -->
+<!--   scale_fill_gradient2(name="IRR",midpoint = 1,low = my_colors[1],high = my_colors[7]) + -->
+<!--   theme_void() + -->
+<!--   coord_sf()+ -->
+<!--   theme(legend.position = c(0.2, 0.9), -->
+<!--         legend.direction = "vertical", -->
+<!--         legend.key.width = unit(10, "mm"), -->
+<!--         legend.key.height = unit(5,"mm"), -->
+<!--         # panel.border = element_rect(colour = "black", fill=NA) -->
+<!--   ) -->
+
+
+<!-- ``` -->
+
+
+<!-- ## Offset Road Lengths -->
+
+<!-- ```{r} -->
+
+
+
+<!-- gbwG <- ggwr.sel(n_claims ~ lico_at_quintile_n + offset(log(total_length_km)), data =zoom_sp , family = "quasipoisson", gweight = gwr.Gauss, coords = cbind(zoom_sp$X, zoom_sp$Y),verbose = FALSE) -->
+<!-- ggwr_ex <- ggwr(n_claims_r ~ lico_at_quintile_n + offset(log(total_length_km)), data = zoom_sp, family = "quasipoisson", bandwidth = gbwG) -->
+<!-- ggwr_ex -->
+<!-- summary(ggwr_ex$SDF) -->
+
+<!-- zoom_sp$lico_gwr_coef <- exp(ggwr_ex$SDF$lico_at_quintile_n) -->
+
+<!-- zoom_na_Rm <- st_as_sf(zoom_sp) -->
+
+<!-- # zoom_na_Rm$claims_bins <- cut(zoom_na_Rm$n_claims,breaks = quantile(zoom_na_Rm$n_claims),probs = seq(0,1,by=1/5)),include.lowest = TRUE) -->
+<!-- my_colors = carto_pal(7, "ArmyRose") -->
+
+<!-- ggplot() +  -->
+<!--   geom_sf(data = zoom_na_Rm, aes(fill = lico_gwr_coef),size=0.05) + -->
+<!--   scale_fill_gradient2(name="IRR",midpoint = 1,low = my_colors[1],high = my_colors[7]) + -->
+<!--   theme_void() + -->
+<!--   coord_sf()+ -->
+<!--   theme(legend.position = c(0.2, 0.9), -->
+<!--         legend.direction = "vertical", -->
+<!--         legend.key.width = unit(10, "mm"), -->
+<!--         legend.key.height = unit(5,"mm"), -->
+<!--         # panel.border = element_rect(colour = "black", fill=NA) -->
+<!--   ) -->
+
+
+<!-- ggsave(filename = "map3.svg",width=5,height=5,units = "in") -->
+
+<!-- ``` -->
+
+
+
+
