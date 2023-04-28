@@ -118,10 +118,9 @@ bc_da <- bc_da %>% #Calculate VanDIX score
            z_no_highschool_prevalance_w*0.25 + z_university_degree_prevalance_w*0.179 + 
            z_unemployment_rate_w*0.214 + z_participation_rate_w*0.036))
 
-bc_da <- left_join(bc_da,cimd, by = "GeoUID") %>% #Join Deprivation Indices to DA geography
-  left_join(smdi,by = "GeoUID") %>% 
+bc_da <- left_join(bc_da,cmdi, by = "GeoUID") %>% #Join Deprivation Indices to DA geography
+  left_join(msdi,by = "GeoUID") %>% 
   left_join(ri,by = "CSD_UID")
-
 
 ########### Load BC Digital Road Atlas (Road network)
 
@@ -162,6 +161,8 @@ roads <- list(highway = dra_highway,
 ########### Split lines by the boundary of the census geography - use a 5 m buffer to enable double counting of roads that split boundaries of DAs
 ptm <- proc.time()
 
+overlap <- 10 #size in m of overlap of CT Boundaries for counting roads and crashes
+
 roads_clip_da <- lapply(1:length(roads), function(x) clip_linestring_by_poly(linestring = roads[[x]],
                                                                           clipping_polygon = bc_da,
                                                                           clipping_polygon_buffer_size = overlap,
@@ -199,6 +200,8 @@ bc_da <- bc_da %>%
   replace_na(list(highway_m = 0, arterial_m = 0, collector_m = 0, local_m = 0,total_roads_m=0))
 
 ########### Load Claims Crash Data - Aggregate to Census Geography
+
+constant <- 1000
 
 claims <- read_csv(file = paste0(wd,"/Data/ICBC_reported_crashes_Full_Data_data.csv")) %>% 
   filter(!is.na(Latitude)) %>% 
@@ -277,3 +280,4 @@ bc_da <- bc_da %>%
 
 st_write(bc_da,dsn = paste0(wd,"/Processed Data/bc_da.gpkg"))
 
+beepr::beep(5)

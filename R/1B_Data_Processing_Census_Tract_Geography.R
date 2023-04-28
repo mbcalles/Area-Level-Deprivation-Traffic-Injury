@@ -92,14 +92,6 @@ quiet=TRUE) %>%
 
 ########### Load Deprivation Indices, Remoteness Index and Calculate VANDIX from Census Variables
 
-# cmdi <- read_xlsx(path = paste0(wd,"/Data/CMDI.xlsx"),sheet = 1) %>% 
-#   rename(GeoUID = PRCDDA)#Canadian Index of Multiple Deprivation
-# 
-# msdi <- read_xlsx(path = paste0(wd,"/Data/MSDI.xlsx"),sheet = 2) %>% #Social and Material Deprivation Index
-#   rename(GeoUID = DA) %>% 
-#   mutate(GeoUID = as.character(GeoUID))
-
-
 ri <- read_csv(paste0(wd,"/Data/remoteness_index.csv")) %>% #Remoteness Index
   mutate(CSD_UID = as.character(CSDuid))
 
@@ -198,6 +190,8 @@ bc_ct <- bc_ct %>%
   replace_na(list(highway_m = 0, arterial_m = 0, collector_m = 0, local_m = 0,total_roads_m=0))
 
 ########### Load Claims Crash Data - Aggregate to Census Geography
+
+constant <- 1000
 
 claims <- read_csv(file = paste0(wd,"/Data/ICBC_reported_crashes_Full_Data_data.csv")) %>% 
   filter(!is.na(Latitude)) %>% 
