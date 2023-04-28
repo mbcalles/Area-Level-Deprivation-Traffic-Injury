@@ -1,5 +1,5 @@
 ---
-title: "Preliminary Analysis of ICBC Claims and Deprivation"
+title: "Association between Traffic Injury Crashes and Deprivation"
 output:
   html_document:
     toc: true
@@ -22,128 +22,11 @@ library(knitr)
 library(ggeffects)
 library(tidyverse)
 
-```
-
-
-# Data
-```{r data,message=FALSE,warning=FALSE}
-
 constant <- 1000
 
-wd <- "C:/Users/micha/UBC/Brubacher, Jeffrey - Road Safety Research Team/Projects/Pedestrian and Cycling Study - CIHR/Preliminary Inequality Analysis"
+wd <- wd()
 
 bc_da <- st_read(paste0(wd,"/Processed Data/bc_da.gpkg"))
-
-ri <- read_csv(paste0(wd,"/Data/remoteness_index.csv")) %>% 
-  mutate(CSD_UID = as.character(CSDuid))
-
-dep <- read_xlsx(path = paste0(wd,"/Data/bc_scores_quintiles_EN.xlsx"),sheet = 1) %>% 
-  rename(GeoUID = PRCDDA)
-
-dep2 <- read_xlsx(path = paste0(wd,"/Data/EquivalenceTableCanada2016_ENG.xlsx"),sheet = 2)%>% 
-  rename(GeoUID = DA) %>% 
-  mutate(GeoUID = as.character(GeoUID))
-
-bc_da <- bc_da %>% left_join(dep,by="GeoUID") %>% 
-  left_join(dep2, by ="GeoUID") %>% 
-  left_join(ri, by = c("CSD_UID"))
-
-icbc <- read_csv(file = paste0(wd,"/Data/ICBC_reported_crashes_Full_Data_data.csv")) %>% 
-  filter(!is.na(Latitude)) %>% 
-  mutate(id = row_number())
-
-icbc_sf <- st_as_sf(icbc,coords = c("Longitude","Latitude"),crs = 4326) %>% 
-  st_transform(crs = 3005)
-
-# st_write(icbc_sf,  paste0(wd,"/Data/icbc_crashes.gpkg"))
-
-#10m buffer around DAs to double count crashes if they occur on the border of a census unit
-bc_da_buff <- st_buffer(bc_da,dist = 10) %>%
-  select(GeoUID)
-
-icbc_da_join <- st_join(icbc_sf,bc_da_buff,join = st_intersects) %>% as_tibble()
-
-icbc_da_duplicated <- icbc_da_join %>% 
-  group_by(id) %>% 
-  summarise(n_DAs = n()) %>% 
-  mutate(crash_weight = 1/n_DAs) #assign weight to crash that occurs on border of DAs
-
-
-icbc_da_duplicated_casualty <- icbc_da_join %>% 
-  filter(`Crash Severity` == "CASUALTY") %>% 
-  group_by(id) %>% 
-  summarise(n_DAs = n()) %>% 
-  mutate(casualty_crash_weight = 1/n_DAs) #crash weight for injury crashes
-
-icbc_da_duplicated <- left_join(icbc_da_duplicated,icbc_da_duplicated_casualty,by=c("id","n_DAs")) %>% 
-  replace_na(list(casualty_crash_weight = 0))
-
-icbc_da_join <- icbc_da_join %>% left_join(icbc_da_duplicated,by = "id") %>% 
-  mutate(weighted_crashes = `Crash Count`*crash_weight,
-         weighted_casualty_crashes =  `Crash Count`*casualty_crash_weight)
-
-
-total_crashes_by_da <- icbc_da_join %>% 
-  group_by(GeoUID) %>% 
-  summarise(n_claims = sum(weighted_crashes),
-            n_casualty_claims = sum(weighted_casualty_crashes)
-  ) 
-
-total_bicycle_crashes_by_da <- icbc_da_join %>% 
-  filter(`Cyclist Flag`=="Yes") %>% 
-  group_by(GeoUID) %>% 
-  summarise(n_cyclist_claims = sum(weighted_crashes),
-            n_cyclist_casualty_claims = sum(weighted_casualty_crashes)
-  ) 
-
-total_pedestrian_crashes_by_da <- icbc_da_join %>% 
-  filter(`Pedestrian Flag`=="Yes") %>% 
-  group_by(GeoUID) %>% 
-  summarise(n_ped_claims = sum(weighted_crashes),
-            n_ped_casualty_claims = sum(weighted_casualty_crashes)
-  ) 
-
-wide_crashes_da <- left_join(total_crashes_by_da,total_bicycle_crashes_by_da,by="GeoUID",) %>%
-  left_join(total_pedestrian_crashes_by_da,by="GeoUID")
-
-bc_da <- bc_da %>% 
-  left_join(wide_crashes_da, by="GeoUID")%>% 
-  replace_na(list(n_claims = 0, n_cyclist_claims = 0, n_ped_claims = 0,
-                  n_casualty_claims = 0, n_cyclist_casualty_claims = 0, n_ped_casualty_claims = 0)) %>% 
-  mutate(pop_inc_rate_overall = n_claims/Population*constant,
-         pop_inc_rate_cyclists = ceiling(n_cyclist_claims)/Population*constant,
-         pop_inc_rate_peds = ceiling(n_ped_claims)/Population*constant,
-         pop_casualty_inc_rate_overall = n_casualty_claims/Population*constant,
-         pop_casualty_inc_rate_cyclists = ceiling(n_cyclist_casualty_claims)/Population*constant,
-         pop_casualty_inc_rate_peds = ceiling(n_ped_casualty_claims)/Population*constant,
-         ntwrk_inc_rate_overall = n_claims/total_roads_m*constant,
-         ntwrk_inc_rate_cyclists = ceiling(total_roads_m)/total_roads_m*constant,
-         ntwrk_inc_rate_peds = ceiling(n_ped_claims)/total_roads_m*constant,
-         ntwrk_casualty_inc_rate_overall = n_casualty_claims/total_roads_m*constant,
-         ntwrk_casualty_inc_rate_cyclists = ceiling(n_cyclist_casualty_claims)/total_roads_m*constant,
-         ntwrk_casualty_inc_rate_peds = ceiling(n_ped_casualty_claims)/total_roads_m*constant
-  )
-
-
-
-
-
-
-# 
-# bc_da %>% 
-#   as_tibble()%>%
-#   mutate(claims_bins = cut(ceiling(n_casualty_claims), 
-#                            breaks = c(0,1,10,20,30,40,50,60,70,80,90,100,
-#                                       150,200,250,300,350,400,450,500,
-#                                       1000,1500,2000,3000,4000,5000,
-#                                       Inf),
-#                            include.lowest = TRUE, dig.lab = 5,right = FALSE
-#   )) %>% 
-#   group_by(claims_bins) %>% 
-#   summarise(n_DAs =n()) %>% 
-#   mutate(`%` = n_DAs/sum(n_DAs)*100) %>% 
-#   kable(caption = "Number of DAs with >0 population by total number of insurance claims involving at least one injured party",digits=2)
-
 
 random_round <- function(x){
   
