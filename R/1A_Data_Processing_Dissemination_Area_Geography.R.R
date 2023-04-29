@@ -3,7 +3,7 @@
 # Description: Load Census Variables at DA Level Geography, Calculate Deprivation Indices, Aggregate Road Network Data, Aggregate Claims Data 
 # Author: Michael Branion-Calles
 # Date Created: 2022-11-01
-# Last Modified: 2023-04-29
+# Last Modified: 2023-04-28
 # -----------------------------------------------------------------------------
 
 # Load required libraries
@@ -112,11 +112,12 @@ bc_da <- bc_da %>% #Calculate VanDIX score
          z_home_owner_prevalence_w = scale(home_owner_prevalence*-1),
          z_participation_rate_w = scale(participation_rate*-1),
          #VANDIX - Area Level Deprivation Index
-         bc_dix = as.numeric(z_hh_avg_income_w*0.089 + 
-           z_home_owner_prevalence_w*0.089 + 
-           z_lone_parent_fam_prevalence_w*0.143 + 
-           z_no_highschool_prevalance_w*0.25 + z_university_degree_prevalance_w*0.179 + 
-           z_unemployment_rate_w*0.214 + z_participation_rate_w*0.036))
+         vandix = as.numeric(z_hh_avg_income_w*0.089 + 
+                               z_home_owner_prevalence_w*0.089 + 
+                               z_lone_parent_fam_prevalence_w*0.143 + 
+                               z_no_highschool_prevalance_w*0.25 + z_university_degree_prevalance_w*0.179 + 
+                               z_unemployment_rate_w*0.214 + z_participation_rate_w*0.036),
+         vandix_quintile = ntile(vandix,5))
 
 bc_da <- left_join(bc_da,cmdi, by = "GeoUID") %>% #Join Deprivation Indices to DA geography
   left_join(msdi,by = "GeoUID") %>% 
@@ -155,7 +156,7 @@ roads <- list(highway = dra_highway,
               arterial = dra_arterial,
               collector = dra_collector,
               local = dra_local
-              )
+)
 
 
 ########### Split lines by the boundary of the census geography - use a 5 m buffer to enable double counting of roads that split boundaries of DAs
@@ -164,10 +165,10 @@ ptm <- proc.time()
 overlap <- 10 #size in m of overlap of CT Boundaries for counting roads and crashes
 
 roads_clip_da <- lapply(1:length(roads), function(x) clip_linestring_by_poly(linestring = roads[[x]],
-                                                                          clipping_polygon = bc_da,
-                                                                          clipping_polygon_buffer_size = overlap,
-                                                                          n_grid_cells = 1000)
-                     )
+                                                                             clipping_polygon = bc_da,
+                                                                             clipping_polygon_buffer_size = overlap,
+                                                                             n_grid_cells = 1000)
+)
 
 proc.time() - ptm
 
@@ -186,9 +187,9 @@ roads_agg_da <- roads_clip_da %>%
   )  %>% 
   bind_rows(.id = "stratification") %>% 
   mutate(stratification = case_when(stratification=="1"~"highway_m",
-                            stratification=="2"~"arterial_m",
-                            stratification=="3"~"collector_m",
-                            stratification=="4"~"local_m"),
+                                    stratification=="2"~"arterial_m",
+                                    stratification=="3"~"collector_m",
+                                    stratification=="4"~"local_m"),
          length_m = as.numeric(length_m)) %>% 
   pivot_wider(names_from = stratification,
               values_from = length_m,
@@ -274,10 +275,4 @@ bc_da <- bc_da %>%
          ntwrk_casualty_inc_rate_peds = ceiling(n_ped_casualty_claims)/total_roads_m*constant
   )
 
-
-
-
-
 st_write(bc_da,dsn = paste0(wd,"/Processed Data/bc_da.gpkg"))
-
-beepr::beep(5)
