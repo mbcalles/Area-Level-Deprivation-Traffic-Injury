@@ -2,4 +2,9 @@
 .Rhistory
 .RData
 .Ruserdata
+.RDataTmp
 Data/
+R/Archive/
+Outputs/
+Manuscript/
+Processed Data/
