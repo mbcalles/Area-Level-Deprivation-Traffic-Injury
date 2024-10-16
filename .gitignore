@@ -2,7 +2,8 @@
 .Rhistory
 .RData
 .Ruserdata
-.RDataTmp
+.RDataTmp*
+*.docx
 Data/
 R/Archive/
 Outputs/

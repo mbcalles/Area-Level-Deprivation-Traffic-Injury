@@ -13,6 +13,7 @@ editor_options:
 
 # Load libraries and functions
 
+
 ```{r,message=FALSE}
  # install.packages("INLA",repos=c(getOption("repos"),INLA="https://inla.r-inla-download.org/R/stable"), dep=TRUE) 
 tictoc::tic()
@@ -112,27 +113,66 @@ tidy_inla <- function(fixed_effects, exponentiate = FALSE, sigfig =NULL) {
 #   
 # }
 
-cma_models <- function(cma_data, cma_name, outcome, deprivation_indicator,distribution = "poisson") {
+cma_models <- function(cma_data,
+                       cma_name,
+                       outcome,
+                       deprivation_indicator,
+                       distribution = "poisson") {
+  ### 0: Unadjusted non=spatial
+  print("Fit unadjusted non-spatial")
   
-  ###### Spatial Models #####  
+  m0 <- inla(
+    as.formula(paste(
+      outcome, "~", deprivation_indicator, "+ f(ui, model = 'iid')"
+    )),
+    data = cma_data,
+    family = distribution,
+    control.compute = list(
+      dic = TRUE,
+      waic = TRUE,
+      cpo = TRUE,
+      config = TRUE
+    ),
+    control.predictor = list(compute = TRUE),
+    verbose = FALSE
+  )
   
-  ### 1: Unadjusted
-  
-  print("Fit unadjusted")
-  
-  m1 <- fit_bym2(cma_data, outcome, deprivation_indicator,distribution)
-  m1_fe <- tidy_inla(m1$summary.fixed, exponentiate = TRUE, sigfig =3) %>%
+  m0_fe <- tidy_inla(m0$summary.fixed,
+                     exponentiate = TRUE,
+                     sigfig = 3) %>%
     mutate(
       `IRR (95% CI)` = paste0(estimate, " (", lower_ci, ", ", upper_ci, ")"),
       variable = row.names(.)
     ) %>%
     select(variable, `IRR (95% CI)`)
   
-    print("Fit adjusted by road length")
-
+  ###### Spatial Models #####
+  
+  ### 1: Unadjusted
+  
+  print("Fit unadjusted")
+  
+  m1 <- fit_bym2(cma_data, outcome, deprivation_indicator, distribution)
+  m1_fe <- tidy_inla(m1$summary.fixed,
+                     exponentiate = TRUE,
+                     sigfig = 3) %>%
+    mutate(
+      `IRR (95% CI)` = paste0(estimate, " (", lower_ci, ", ", upper_ci, ")"),
+      variable = row.names(.)
+    ) %>%
+    select(variable, `IRR (95% CI)`)
+  
+  print("Fit adjusted by road length")
+  
   ### 2: Adjusted by Road Length
-  m2 <- fit_bym2(cma_data, outcome, deprivation_indicator, formula_terms = "ln_roads_km_c",distribution)
-  m2_fe <- tidy_inla(m2$summary.fixed, exponentiate = TRUE, sigfig =3) %>%
+  m2 <- fit_bym2(cma_data,
+                 outcome,
+                 deprivation_indicator,
+                 formula_terms = "ln_roads_km_c",
+                 distribution)
+  m2_fe <- tidy_inla(m2$summary.fixed,
+                     exponentiate = TRUE,
+                     sigfig = 3) %>%
     mutate(
       `IRR (95% CI)` = paste0(estimate, " (", lower_ci, ", ", upper_ci, ")"),
       variable = row.names(.)
@@ -140,29 +180,34 @@ cma_models <- function(cma_data, cma_name, outcome, deprivation_indicator,distri
     select(variable, `IRR (95% CI)`)
   
   ### 3: Adjusted by Road Length and other variables
-  m3 <- fit_bym2(cma_data, outcome, deprivation_indicator, 
-                  formula_terms = "ln_roads_km_c + roads_prop_highway_arterial_z + ale_index_z + canbics_index_z + population_100_c",distribution)
-  m3_fe <- tidy_inla(m3$summary.fixed, exponentiate = TRUE, sigfig =3) %>%
+  m3 <- fit_bym2(cma_data,
+                 outcome,
+                 deprivation_indicator,
+                 formula_terms = "ln_roads_km_c + roads_prop_highway_arterial_z + ale_index_z + canbics_index_z + population_100_c",
+                 distribution)
+  m3_fe <- tidy_inla(m3$summary.fixed,
+                     exponentiate = TRUE,
+                     sigfig = 3) %>%
     mutate(
       `IRR (95% CI)` = paste0(estimate, " (", lower_ci, ", ", upper_ci, ")"),
       variable = row.names(.)
     ) %>%
     select(variable, `IRR (95% CI)`)
-
-  l <- list(m1, m2, m3)
-  names(l) <- c("Unadjusted","Adjusted1","Adjusted2")
   
-      print("Fit adjusted by road length and covariates")
-
-
+  l <- list(m0, m1, m2, m3)
+  names(l) <- c("Nonspatial","Unadjusted", "Adjusted1", "Adjusted2")
+  
+  print("Fit adjusted by road length and covariates")
+  
+  
   # Compile results into a tibble
   tibble(
     cma = cma_name,
-    model_type = c("unadjusted", "adjusted_minimal", "adjusted_full"),
+    model_type = c("Nonspatial","unadjusted", "adjusted_minimal", "adjusted_full"),
     models = l,
-    fixed_effects = list(m1_fe, m2_fe, m3_fe)
+    fixed_effects = list(m0_fe, m1_fe, m2_fe, m3_fe)
   )
-         
+  
 }
 
 
@@ -171,9 +216,11 @@ clean_fixed_effects <- function(cma_model_object){
   
   cma_model_object %>% 
     bind_rows(,.id="model_type") %>% 
-    mutate(model_type = case_when(model_type == "1"~"Unadjusted IRR (95% CI)",
-                                  model_type == "2"~"Minimally Adjusted IRR (95% CI)",
-                                  model_type == "3"~"Fully Adjusted IRR (95% CI)",
+    mutate(model_type = case_when(model_type == "1"~"Nonspatial Unadjusted IRR (95% CI)",
+                                  model_type == "2"~"Spatial Unadjusted IRR (95% CI)",
+                                  model_type == "3"~"Spatial Minimally Adjusted IRR (95% CI)",
+                                  model_type == "4"~"Spatial Adjusted IRR (95% CI)"
+                                  
     )) %>% 
     pivot_wider(id_cols = variable,names_from = model_type,values_from = `IRR (95% CI)` ) %>% 
     mutate(variable = case_when(variable == "ln_roads_km_c" ~"Log(Total KMs of Road)",
@@ -192,7 +239,7 @@ assign_nearest_neighbors <- function(nb_object, sp_object,make_symmetrical=TRUE)
     # Calculate centroids for isolated polygons
   centroids <- coordinates(sp_object)  # If using sp
   
-  centroids_nn <- knearneigh(centroids, k = 1)
+  centroids_nn <- knearneigh(centroids, k = 3)
 
   # Get the list of neighbors
   zero_nb_logical <- sapply(nb_object, function(x) x[1] ==0)
@@ -245,20 +292,18 @@ create_descriptive_table <- function(sf_obj, selected_vars) {
 # Load Data and Clean
 
 ```{r,message=FALSE}
-# Load and clean data -----------------------------------------------------
-
+# Load and clean census data for Canadian metropolitan areas (CMA)
 cma_name <- cancensus::get_census("CA21",
                                   level = "CMA",
                                   regions = list(PR=59)) %>% 
-  rename(CMA_UID = GeoUID,
-         `CMA Name` = `Region Name`,
-         cma_population = Population) %>% 
-  arrange(desc(cma_population)) %>% 
-  select(CMA_UID, Type, `CMA Name`,cma_population) %>% 
-  mutate(`CMA Name` = str_remove_all(`CMA Name`," \\(B\\)|\\(K\\)|\\(D\\)")) %>%
-  clean_names() %>% 
-  mutate(cma_name = stringr::str_trim(cma_name,"right"))
-
+  rename(CMA_UID = GeoUID,  # Rename GeoUID to CMA_UID for clarity
+         `CMA Name` = `Region Name`,  # Rename 'Region Name' to 'CMA Name'
+         cma_population = Population) %>%  # Rename 'Population' to 'cma_population'
+  arrange(desc(cma_population)) %>%  # Sort by population in descending order
+  select(CMA_UID, Type, `CMA Name`, cma_population) %>%  # Select relevant columns
+  mutate(`CMA Name` = str_remove_all(`CMA Name`, " \\(B\\)|\\(K\\)|\\(D\\)")) %>%  # Remove labels (B, K, D) from names
+  clean_names() %>%  # Clean column names (lowercase and snake_case)
+  mutate(cma_name = stringr::str_trim(cma_name, "right"))  # Trim whitespace from the right
 
 # Read spatial data for dissemination areas in British Columbia
 bc_da <- st_read(
@@ -266,110 +311,37 @@ bc_da <- st_read(
 ) %>%
   # Join the census data with the spatial data
   left_join(cma_name, by = join_by(cma_uid)) %>%
-  filter(!is.na(cma_name)) %>% 
+  filter(!is.na(cma_name)) %>%  # Filter out rows without CMA names
   mutate(
-    population_100 = population/100,
+    population_100 = population / 100,  # Scale population down by 100
+    population_100_c = scale(population_100, scale = FALSE),  # Center population
+    total_roads_km = total_roads_m / 1000,  # Convert road lengths from meters to kilometers
     
-    population_100_c = scale(population_100, scale = FALSE),    # Convert road lengths from meters to kilometers
-    total_roads_km = total_roads_m / 1000,
-    
-    n_casualty_claims_rate = n_casualty_claims/total_roads_km*10,
-    n_pedestrian_casualty_claims_rate = n_pedestrian_casualty_claims/total_roads_km*10,
-    n_cyclist_casualty_claims_rate = n_cyclist_casualty_claims/total_roads_km*10,
+    # Calculate casualty claims rates per kilometer of road
+    n_casualty_claims_rate = n_casualty_claims / total_roads_km * 10,
+    n_pedestrian_casualty_claims_rate = n_pedestrian_casualty_claims / total_roads_km * 10,
+    n_cyclist_casualty_claims_rate = n_cyclist_casualty_claims / total_roads_km * 10,
 
     # Calculate the proportion of roads that are highways or arterials
     roads_prop_highway_arterial = (highway_m + arterial_m) / total_roads_m,
-    # Standardize the proportion of highways and arterials
-    roads_prop_highway_arterial_z = my_std(roads_prop_highway_arterial),
+    roads_prop_highway_arterial_z = my_std(roads_prop_highway_arterial),  # Standardize the proportion
+    
     # Log-transform the total length of roads in kilometers
-    ln_roads_km = ifelse(total_roads_km ==0, NA,log(total_roads_km)),
-    ln_roads_km_c = scale(ln_roads_km, scale = FALSE),
-    # Calculate the casualty claims rate by total road kilometers
+    ln_roads_km = ifelse(total_roads_km == 0, NA, log(total_roads_km)),
+    ln_roads_km_c = scale(ln_roads_km, scale = FALSE),  # Center log-transformed roads
+    
+    # Calculate casualty claims rates by total road kilometers
     casualty_claims_rate = n_casualty_claims / total_roads_km * 10,
-    # Calculate the cyclist casualty claims rate by total road kilometers
     cyclist_casualty_claims_rate = n_cyclist_casualty_claims / total_roads_km * 10,
-    # Calculate the pedestrian casualty claims rate by total road kilometers
     pedestrian_casualty_claims_rate = n_pedestrian_casualty_claims / total_roads_km * 10,
-    # Convert journey-to-work total from meters to kilometers
-    jtw_total_100 = jtw_total / 100,
-    # Standardize the journey-to-work total
-    jtw_total_z = my_std(jtw_total),
-    # Calculate the proportion of journey-to-work trips that are motor vehicle-related
-    jtw_prop_mv = ((jtw_driver + jtw_passenger) / jtw_total),
-    # Calculate the proportion of non-motor vehicle journey-to-work trips
-    jtw_prop_non_mv = (1 - jtw_prop_mv),
-    # Standardize the proportion of non-motor vehicle trips
-    jtw_prop_non_mv_z = my_std(jtw_prop_non_mv),
-    # Adjust and scale the remote index for visualization
-    remote_index_2 = (1 - remote_index) * 100,
-    # Log-transform the adjusted remote index
-    ln_remote_index = log(remote_index_2),
-    # Standardize the VANDIX index
-    vandix_z = my_std(vandix),
-    # Convert VANDIX quintile to descriptive categories
-    vandix_quintile = vandix_quintile %>% as.character(),
-    vandix_quintile = case_when(
-      vandix_quintile == "1" ~ "1 - Least Deprived",
-      vandix_quintile == "5" ~ "5 - Most Deprived",
-      TRUE ~ vandix_quintile
-    ),
-    # Convert educational attainment quintile to descriptive categories
-    no_highschool_quintile = no_highschool_quintile %>% as.character(),
-    no_highschool_quintile = case_when(
-      no_highschool_quintile == "1" ~ "1 - Least Deprived",
-      no_highschool_quintile == "5" ~ "5 - Most Deprived",
-      TRUE ~ no_highschool_quintile
-    ),
-    # Convert unemployment rate quintile to descriptive categories
-    unemployment_rate_quintile = unemployment_rate_quintile %>% as.character(),
-    unemployment_rate_quintile = case_when(
-      unemployment_rate_quintile == "1" ~ "1 - Least Deprived",
-      unemployment_rate_quintile == "5" ~ "5 - Most Deprived",
-      TRUE ~ unemployment_rate_quintile
-    ),
-    # Convert university degree quintile to descriptive categories
-    university_degree_quintile = university_degree_quintile %>% as.character(),
-    university_degree_quintile = case_when(
-      university_degree_quintile == "1" ~ "1 - Least Deprived",
-      university_degree_quintile == "5" ~ "5 - Most Deprived",
-      TRUE ~ university_degree_quintile
-    ),
-    # Convert lone-parent family quintile to descriptive categories
-    lone_parent_fam_quintile = lone_parent_fam_quintile %>% as.character(),
-    lone_parent_fam_quintile = case_when(
-      lone_parent_fam_quintile == "1" ~ "1 - Least Deprived",
-      lone_parent_fam_quintile == "5" ~ "5 - Most Deprived",
-      TRUE ~ lone_parent_fam_quintile
-    ),
-    # Convert average household income quintile to descriptive categories
-    hh_avg_income_quintile = hh_avg_income_quintile %>% as.character(),
-    hh_avg_income_quintile = case_when(
-      hh_avg_income_quintile == "1" ~ "1 - Least Deprived",
-      hh_avg_income_quintile == "5" ~ "5 - Most Deprived",
-      TRUE ~ hh_avg_income_quintile
-    ),
-    # Convert home ownership quintile to descriptive categories
-    home_owner_quintile = home_owner_quintile %>% as.character(),
-    home_owner_quintile = case_when(
-      home_owner_quintile == "1" ~ "1 - Least Deprived",
-      home_owner_quintile == "5" ~ "5 - Most Deprived",
-      TRUE ~ home_owner_quintile
-    ),
-    # Convert participation rate quintile to descriptive categories
-    participation_rate_quintile = participation_rate_quintile %>% as.character(),
-    participation_rate_quintile = case_when(
-      participation_rate_quintile == "1" ~ "1 - Least Deprived",
-      participation_rate_quintile == "5" ~ "5 - Most Deprived",
-      TRUE ~ participation_rate_quintile
-    ),
+
     # Convert CANBICS class to descriptive categories
     canbics_class_c = case_when(
       canbics_class == 1 | canbics_class == "2" ~ "1 - Low",
       canbics_class == 5 | canbics_class == "4" ~ "3 - High",
       canbics_class == 3 ~ "2 - Medium"
     ),
-    # Standardize the CANBICS index
-    canbics_index_z = my_std(canbics_index),
+    canbics_index_z = my_std(canbics_index),  # Standardize CANBICS index
     
     # Convert ALE class to descriptive categories
     ale_class_c = case_when(
@@ -377,9 +349,9 @@ bc_da <- st_read(
       ale_class == 5 | ale_class == "4" ~ "3 - High",
       ale_class == 3 ~ "2 - Medium"
     ),
-    # Standardize the ALE index
-    ale_index_z = my_std(ale_index),
-    # Calculate VanDIX 
+    ale_index_z = my_std(ale_index),  # Standardize ALE index
+    
+    # Calculate VanDIX score based on various factors
     z_no_highschool_prevalance_w = scale(no_highschool_prevalance),
     z_university_degree_prevalance_w = scale(university_degree_prevalance * -1),
     z_unemployment_rate_w = scale(unemployment_rate),
@@ -387,6 +359,7 @@ bc_da <- st_read(
     z_hh_avg_income_w = scale(hh_avg_income * -1),
     z_home_owner_prevalence_w = scale(home_owner_prevalence * -1),
     z_participation_rate_w = scale(participation_rate * -1),
+    
     # Compute VanDIX (Area Level Deprivation Index) score
     vandix = as.numeric(
       z_hh_avg_income_w * 0.089 +
@@ -397,22 +370,30 @@ bc_da <- st_read(
         z_unemployment_rate_w * 0.214 +
         z_participation_rate_w * 0.036
     ),
-    vandix_z_c = case_when(vandix_z< -5 ~ "<-5",
-                                    vandix_z>= -5 & vandix_z< -4 ~"-5 - -4",
-                                    vandix_z>= -4 & vandix_z < -3 ~"-4 - -3",
-                                    vandix_z>= -3 & vandix_z < -2 ~"-3 - -2",
-                                    vandix_z>= -2 & vandix_z < -1 ~"-2 - -1",
-                                    vandix_z>= -1 & vandix_z < 0 ~"-1 - 0",
-                                    vandix_z>= 0 & vandix_z < 1 ~"0 - 1",
-                                    vandix_z>= 1 & vandix_z<2 ~"1 - 2",
-                                    vandix_z>= 2 & vandix_z<3 ~"2 - 3",
-                                    vandix_z>= 3 & vandix_z<4 ~"3 - 4",
-                                    vandix_z>= 4 & vandix_z<5 ~"4 - 5",
-                                    vandix_z >= 5 ~ ">5",
-      ),
-      vandix_z_c  = factor(vandix_z_c,levels = c("<-5","-5 - -4","-4 - -3" , "-3 - -2" , "-2 - -1" , "-1 - 0",  "0 - 1" ,  "1 - 2",  "2 - 3", "3 - 4","4 - 5",">5"))
+    
+    vandix_z = my_std(vandix),
+    
+    # Categorize the standardized VanDIX score
+    vandix_z_c = case_when(
+      vandix_z < -5 ~ "<-5",
+      vandix_z >= -5 & vandix_z < -4 ~ "-5 - -4",
+      vandix_z >= -4 & vandix_z < -3 ~ "-4 - -3",
+      vandix_z >= -3 & vandix_z < -2 ~ "-3 - -2",
+      vandix_z >= -2 & vandix_z < -1 ~ "-2 - -1",
+      vandix_z >= -1 & vandix_z < 0 ~ "-1 - 0",
+      vandix_z >= 0 & vandix_z < 1 ~ "0 - 1",
+      vandix_z >= 1 & vandix_z < 2 ~ "1 - 2",
+      vandix_z >= 2 & vandix_z < 3 ~ "2 - 3",
+      vandix_z >= 3 & vandix_z < 4 ~ "3 - 4",
+      vandix_z >= 4 & vandix_z < 5 ~ "4 - 5",
+      vandix_z >= 5 ~ ">5"
+    ),
+    
+    # Convert the VanDIX categories into a factor for ordered plotting
+    vandix_z_c = factor(vandix_z_c, levels = c("<-5", "-5 - -4", "-4 - -3", "-3 - -2", "-2 - -1", "-1 - 0", "0 - 1", "1 - 2", "2 - 3", "3 - 4", "4 - 5", ">5"))
   ) %>% 
-    mutate(region_name = case_when(
+  # Assign regions based on CMA names
+  mutate(region_name = case_when(
     cma_name %in% c("Prince Rupert", "Terrace") ~ "Northwest",
     cma_name %in% c("Fort St. John", "Dawson Creek", "Prince George", "Quesnel", "Williams Lake") ~ "North Central",
     cma_name %in% c("Kamloops", "Salmon Arm") ~ "Kamloops-Salmon Arm",
@@ -420,35 +401,45 @@ bc_da <- st_read(
     cma_name %in% c("Cranbrook", "Nelson", "Trail") ~ "Southeast",
     cma_name %in% c("Vancouver", "Squamish") ~ "Vancouver-Squamish",
     cma_name %in% c("Abbotsford - Mission", "Chilliwack") ~ "Fraser Valley",
-    cma_name %in% c("Campbell River", "Courtenay", "Port Alberni", "Parksville", "Nanaimo", "Ladysmith", "Duncan","Powell River") ~ "Central Island-Powell River",
+    cma_name %in% c("Campbell River", "Courtenay", "Port Alberni", "Parksville", "Nanaimo", "Ladysmith", "Duncan", "Powell River") ~ "Central Island-Powell River",
     cma_name == "Victoria" ~ "Victoria",
-    TRUE ~ NA_character_  # Handle cases where cma_name doesn't match any of the specified values
+    TRUE ~ NA_character_  # Handle cases where CMA name doesn't match any of the specified values
   ))
 
 
-#split data into list of CMAs
+# bc_da %>% 
+#   filter(total_roads_km==0) %>% 
+#   nrow()
+
+bc_da <- bc_da %>% 
+  filter(total_roads_km>0) #filter out DAs without any roads
+
+
+# Split the data into a list of CMAs
 bc_cma <- bc_da %>% 
   split(.$cma_name)
 
+# Split the data into a list of regions
 bc_region <- bc_da %>% 
   split(.$region_name)
 
+# Summarize population data for each CMA
 cma_pop <- bc_da %>%
-  st_drop_geometry() %>% 
+  st_drop_geometry() %>%  # Remove geometry for summarization
   group_by(cma_name) %>% 
-  summarise(n_da = n(),
-            population = sum(population,na.rm=TRUE)) %>% 
-  arrange(desc(population))
+  summarise(n_da = n(),  # Count the number of dissemination areas
+            population = sum(population, na.rm = TRUE)) %>% 
+  arrange(desc(population))  # Sort by population
 
+# Summarize population data for each region
 region_pop <- bc_da %>%
-  st_drop_geometry() %>% 
+  st_drop_geometry() %>%  # Remove geometry for summarization
   group_by(region_name) %>% 
-  summarise(n_da = n(),
-            population = sum(population,na.rm=TRUE)) %>% 
-  arrange(desc(population))
+  summarise(n_da = n(),  # Count the number of dissemination areas
+            population = sum(population, na.rm = TRUE)) %>% 
+  arrange(desc(population))  # Sort by population
 
-
-
+# Create descriptive tables for each region
 region_descriptives <- map(
   bc_region,
   create_descriptive_table,
@@ -476,10 +467,10 @@ region_descriptives <- map(
   )
 ) %>% 
   bind_rows(.id = "region") %>% 
-  arrange(desc(n)) %>% 
-  mutate(p_zero = n_zero/n*100)
+  arrange(desc(n)) %>%  # Sort by count
+  mutate(p_zero = n_zero / n * 100)  # Calculate percentage of zero claims
 
-
+# Create descriptive tables for each CMA
 cma_descriptives <- map(
   bc_cma,
   create_descriptive_table,
@@ -507,14 +498,63 @@ cma_descriptives <- map(
   )
 ) %>% 
   bind_rows(.id = "cma") %>% 
-  arrange(desc(n)) %>% 
-  mutate(p_zero = n_zero/n*100)
+  arrange(desc(n)) %>%  # Sort by count
+  mutate(p_zero = n_zero / n * 100)  # Calculate percentage of zero claims
 
 ```
 
+# Missing Data
+
+```{r}
+
+missing_data <- bc_da %>% 
+  filter(is.na(vandix_z)|is.na(canbics_index_z)|is.na(ale_index_z)|total_roads_km==0|is.na(population))
+
+nrow(missing_data)
+
+nrow(missing_data)/nrow(bc_da)
+
+create_descriptive_table(missing_data,
+  c(
+    "n_claims",
+    "n_casualty_claims",
+    "n_cyclist_claims",
+    "n_cyclist_casualty_claims",
+    "n_pedestrian_claims",
+    "n_pedestrian_casualty_claims",
+    "population",
+    "total_roads_km",
+    "roads_prop_highway_arterial",
+    "no_highschool_prevalance",
+    "unemployment_rate",
+    "hh_avg_income",
+    "participation_rate",
+    "university_degree_prevalance",
+    "lone_parent_fam_prevalence",
+    "home_owner_prevalence",
+    "roads_prop_highway_arterial",
+    "vandix_z",
+    "ale_index_z",
+    "canbics_index_z"
+  )) %>% 
+  mutate(
+    complete = n- missing,
+    p_missing = missing/n*100,
+         
+         ) %>% 
+  select(variable,n,complete,missing,p_missing,everything()) %>% 
+     flextable() %>% 
+      merge_v(j = ~  + n ) %>% 
+   theme_booktabs() %>% 
+   colformat_double(
+  big.mark = ",", digits = 1, na_str = "N/A"
+) 
+```
 
 
 # Spatial Models
+
+
 
 ## Vancouver - Squamish
 
@@ -629,7 +669,7 @@ g <- inla.read.graph(filename = "vancouver.adj")
 
 # Model Set 1: Total Casualty Claim Crashes
 
-van_models_1 <- cma_models(vancouver_sp@data, "Vancouver-Squamish", "n_casualty_claims", "vandix_z") 
+van_models_1 <- cma_models(cma_data = vancouver_sp@data, cma_name = "Vancouver-Squamish",outcome =  "n_casualty_claims", deprivation_indicator = "vandix_z",distribution = "poisson") 
 
 van_all <- clean_fixed_effects(van_models_1$fixed_effects)
 
@@ -1826,7 +1866,7 @@ beepr::beep(8)
 
 ## Study Area
 
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10,warning=FALSE,message=FALSE}
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10,warning=FALSE,message=FALSE,fig.cap="Regional Grouping of Census Metropolitan and Agglomeration Areas. Labelled Points Represent Census Metroplitan Area and Census Agglomeration Centroids"}
 
 
 
@@ -1864,9 +1904,18 @@ bc_da <- bc_da %>%
  mutate(region_name = factor(region_name, levels = regions$region_name))
 
 
-set.seed(10)
-ggplot() +
-  geom_sf(data = bc_boundary, fill = "grey95")  +
+
+library(extrafont)
+
+# Load fonts (run this once)
+# font_import()  # Uncomment if you haven't done this yet
+# loadfonts(device = "win")
+
+set.seed(165487)
+study_area <- ggplot() +
+  geom_sf(data = bc_boundary,
+          fill = "grey99",
+          colour = "grey70")  +
   geom_sf(data = bc_da, aes(fill = region_name, colour = region_name)) +
   geom_sf(data = cma_centroids) +
   ggrepel::geom_label_repel(
@@ -1876,58 +1925,101 @@ ggplot() +
       y = st_coordinates(cma_centroids)[, "Y"],
       label = cma_name
     ),
-    force = 40,
+    family = "Arial",
+    force = 35,
     max.overlaps = Inf,
-    label.padding = unit(0.25, "lines"),
+    label.padding = unit(0.1, "lines"),
+    segment.size = 0.25,
     # Increase padding for readability
-    fill = scales::alpha("white", 0.8),
+    fill = scales::alpha("white", 0.7),
     # Slightly more opaque background
-    size = 4
+    size = 2.5
   ) +  # Increase label text size
   scale_fill_carto_d(name = "Region", palette = "Antique") +
   scale_colour_carto_d(name = "Region", palette = "Antique") +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom") +
-  labs(title = "Regional Grouping of Census Metropolitan and Agglomeration Areas", subtitle = "Labelled Points Represent CMA/CA Centroids")
+  theme_void(
+    base_size = 10
+  ) +
+  theme(
+    text = element_text(family = "Arial"),
+    legend.position = "bottom") 
 
 
+ggsave(
+  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/study_area.jpg",
+  plot = study_area,
+  units = "mm",
+  height = 190,
+  width = 190,
+  dpi = 300
+)
+
+study_area
+```
 
 
+```{r, echo = FALSE}
 bc_da %>%
   st_drop_geometry() %>%
   summarise(
-    `Number of DAs` = n(),
-    `Total Injury Claims` = sum(n_casualty_claims),
+    `Number of DAs` = format(n(), big.mark = ","),
+        population_mean = mean(population,na.rm=TRUE),
+    population = sum(population, na.rm = TRUE),
+    # Population with thousands separator and percentage
+    `Population (%)` = paste0(
+      format(sum(population, na.rm = TRUE), big.mark = ","),
+      " (", signif(100 * sum(population, na.rm = TRUE) / sum(bc_da$population, na.rm = TRUE), 3), "%)"
+    ),
+    
+    # Total Roads (km) with thousands separator and percentage
+    `Total Roads (km) (%)` = paste0(
+      format(ceiling(sum(total_roads_km, na.rm = TRUE)), big.mark = ","),
+      " (", signif(100 * sum(total_roads_km, na.rm = TRUE) / sum(bc_da$total_roads_km, na.rm = TRUE), 3), "%)"
+    ),
+    
+        # Mean and SD for other variables
+    `Percentage of Major Roads (SD)` = paste0(
+      signif(mean(roads_prop_highway_arterial*100, na.rm = TRUE), 3), 
+      " (", signif(sd(roads_prop_highway_arterial*100, na.rm = TRUE), 3), ")"
+    ),
+    
+    # Total Injury Claims with thousands separator and percentage
+    `Total Injury Claims (%)` = paste0(
+      format(sum(n_casualty_claims), big.mark = ","),
+      " (", signif(100 * sum(n_casualty_claims) / sum(bc_da$n_casualty_claims),3), "%)"
+    ),
+    
     `Injury Claims Mean (SD)` = paste0(
       signif(mean(n_casualty_claims), 3), 
       " (", signif(sd(n_casualty_claims), 3), ")"
     ),
     
-    `Total Cycling Injury Claims` = sum(n_cyclist_casualty_claims),
+    # Total Cycling Injury Claims with thousands separator and percentage
+    `Total Cycling Injury Claims (%)` = paste0(
+      format(sum(n_cyclist_casualty_claims), big.mark = ","),
+      " (", signif(100 * sum(n_cyclist_casualty_claims) / sum(bc_da$n_cyclist_casualty_claims), 3), "%)"
+    ),
+    
     `Cycling Injury Claims Mean (SD)` = paste0(
       signif(mean(n_cyclist_casualty_claims), 3), 
       " (", signif(sd(n_cyclist_casualty_claims), 3), ")"
     ),
     
-    `Total Pedestrian Injury Claims` = sum(n_pedestrian_casualty_claims),
+    # Total Pedestrian Injury Claims with thousands separator and percentage
+    `Total Pedestrian Injury Claims (%)` = paste0(
+      format(sum(n_pedestrian_casualty_claims), big.mark = ","),
+      " (", signif(100 * sum(n_pedestrian_casualty_claims) / sum(bc_da$n_pedestrian_casualty_claims), 3), "%)"
+    ),
+    
     `Pedestrian Injury Claims Mean (SD)` = paste0(
       signif(mean(n_pedestrian_casualty_claims), 3), 
       " (", signif(sd(n_pedestrian_casualty_claims), 3), ")"
     ),
     
-    `Population` = sum(population, na.rm = TRUE),
-    
+    # Mean and SD for other variables
     `VANDIX Mean (SD)` = paste0(
       signif(mean(vandix, na.rm = TRUE), 2), 
       " (", signif(sd(vandix, na.rm = TRUE), 2), ")"
-    ),
-    
-    # New variables added below
-    `Total Roads (km)` = sum(total_roads_km, na.rm = TRUE),
-    
-    `Highway/Arterial Roads Proportion Mean (SD)` = paste0(
-      signif(mean(roads_prop_highway_arterial, na.rm = TRUE), 3),
-      " (", signif(sd(roads_prop_highway_arterial, na.rm = TRUE), 3), ")"
     ),
     
     `No Highschool Prevalence Mean (SD)` = paste0(
@@ -1976,7 +2068,8 @@ bc_da %>%
     )
     
   ) %>%
-  arrange(desc(Population)) %>% 
+  arrange(desc(population)) %>%
+  select(-population) %>% 
   flextable() %>% 
   theme_booktabs()
 
@@ -1986,43 +2079,67 @@ bc_da %>%
 The analysis included `r sum(regions$n)` dissemination areas across 20 different metropolitan regions with a total of `r sum(regions$n_casualty_claims)` motor-vehicle crashes resulting in at least one injury, and   `r sum(regions$n_cyclist_casualty_claims)` such crashes involved at least one cyclist, while `r sum(regions$n_pedestrian_casualty_claims)` involved at least one pedestrian.
 
 ```{r, echo = FALSE, fig.width= 7.5, fig.height=10,warning=FALSE,message=FALSE}
-
 bc_da %>%
   st_drop_geometry() %>%
   group_by(region_name) %>%
   summarise(
-    `Number of DAs` = n(),
-    `Total Injury Claims` = sum(n_casualty_claims),
+    `Number of DAs` = format(n(), big.mark = ","),
+    population = sum(population, na.rm = TRUE),
+    # Population with thousands separator and percentage
+    `Population (%)` = paste0(
+      format(sum(population, na.rm = TRUE), big.mark = ","),
+      " (", signif(100 * sum(population, na.rm = TRUE) / sum(bc_da$population, na.rm = TRUE), 3), "%)"
+    ),
+    
+    # Total Roads (km) with thousands separator and percentage
+    `Total Roads (km) (%)` = paste0(
+      format(ceiling(sum(total_roads_km, na.rm = TRUE)), big.mark = ","),
+      " (", signif(100 * sum(total_roads_km, na.rm = TRUE) / sum(bc_da$total_roads_km, na.rm = TRUE), 3), "%)"
+    ),
+    
+        # Mean and SD for other variables
+    `Percentage of Major Roads (SD)` = paste0(
+      signif(mean(roads_prop_highway_arterial*100, na.rm = TRUE), 3), 
+      " (", signif(sd(roads_prop_highway_arterial*100, na.rm = TRUE), 3), ")"
+    ),
+    
+    # Total Injury Claims with thousands separator and percentage
+    `Total Injury Claims (%)` = paste0(
+      format(sum(n_casualty_claims), big.mark = ","),
+      " (", signif(100 * sum(n_casualty_claims) / sum(bc_da$n_casualty_claims),3), "%)"
+    ),
+    
     `Injury Claims Mean (SD)` = paste0(
       signif(mean(n_casualty_claims), 3), 
       " (", signif(sd(n_casualty_claims), 3), ")"
     ),
     
-    `Total Cycling Injury Claims` = sum(n_cyclist_casualty_claims),
+    # Total Cycling Injury Claims with thousands separator and percentage
+    `Total Cycling Injury Claims (%)` = paste0(
+      format(sum(n_cyclist_casualty_claims), big.mark = ","),
+      " (", signif(100 * sum(n_cyclist_casualty_claims) / sum(bc_da$n_cyclist_casualty_claims), 3), "%)"
+    ),
+    
     `Cycling Injury Claims Mean (SD)` = paste0(
       signif(mean(n_cyclist_casualty_claims), 3), 
       " (", signif(sd(n_cyclist_casualty_claims), 3), ")"
     ),
     
-    `Total Pedestrian Injury Claims` = sum(n_pedestrian_casualty_claims),
+    # Total Pedestrian Injury Claims with thousands separator and percentage
+    `Total Pedestrian Injury Claims (%)` = paste0(
+      format(sum(n_pedestrian_casualty_claims), big.mark = ","),
+      " (", signif(100 * sum(n_pedestrian_casualty_claims) / sum(bc_da$n_pedestrian_casualty_claims), 3), "%)"
+    ),
+    
     `Pedestrian Injury Claims Mean (SD)` = paste0(
       signif(mean(n_pedestrian_casualty_claims), 3), 
       " (", signif(sd(n_pedestrian_casualty_claims), 3), ")"
     ),
     
-    `Population` = sum(population, na.rm = TRUE),
-    
+    # Mean and SD for other variables
     `VANDIX Mean (SD)` = paste0(
       signif(mean(vandix, na.rm = TRUE), 2), 
       " (", signif(sd(vandix, na.rm = TRUE), 2), ")"
-    ),
-    
-    # New variables added below
-    `Total Roads (km)` = sum(total_roads_km, na.rm = TRUE),
-    
-    `Highway/Arterial Roads Proportion Mean (SD)` = paste0(
-      signif(mean(roads_prop_highway_arterial, na.rm = TRUE), 3),
-      " (", signif(sd(roads_prop_highway_arterial, na.rm = TRUE), 3), ")"
     ),
     
     `No Highschool Prevalence Mean (SD)` = paste0(
@@ -2071,9 +2188,12 @@ bc_da %>%
     )
     
   ) %>%
-  arrange(desc(Population)) %>% 
+  arrange(desc(population)) %>%
+  select(-population) %>% 
   flextable() %>% 
   theme_booktabs()
+
+
 
 ```
 
@@ -2096,7 +2216,7 @@ all <- bind_rows(
 
 all <- all %>%
   mutate(Variable = "VanDIX (SD)") %>%
-  select(Variable,Region,Outcome, 4,6) %>%
+  select(Variable,Region,Outcome, everything()) %>%
   split(.$Outcome)
 ```
 
@@ -2106,41 +2226,6 @@ all <- all %>%
 #### All Motor Vehicle Traffic Injury Crashes
 
 ```{r, echo = FALSE, fig.width= 7.5, fig.height=10,warning=FALSE,message=FALSE}
-
-# crude_rates <- bc_da %>% 
-#   st_drop_geometry() %>% 
-#   filter(cma_name %in% cmas$cma_name) %>% 
-#   group_by(cma_name,vandix_quintile) %>% 
-#   summarise(n_das = n(), 
-#             n_casualty_claims = sum(n_casualty_claims, na.rm=TRUE),
-#             n_cyclist_casualty_claims = sum(n_cyclist_casualty_claims,na.rm = TRUE),
-#             n_pedestrian_casualty_claims = sum(n_pedestrian_casualty_claims),
-#             total_roads_km = sum(total_roads_km,na.rm = TRUE),
-#             casualty_claims_rate = n_casualty_claims/total_roads_km*100,
-#             cyclist_casualty_claims_rate = n_cyclist_casualty_claims/total_roads_km*100,
-#             pedestrian_casualty_claims_rate = n_pedestrian_casualty_claims/total_roads_km*100) %>% 
-#   mutate(cma_name = factor(cma_name, levels = cmas$cma_name))
-# 
-# crude_rates %>% 
-#   remove_missing() %>% 
-#   ggplot(aes(x = vandix_quintile,y =casualty_claims_rate,group = 1)) + 
-#   geom_point() + 
-#   stat_smooth(method = "lm", se = FALSE, color = "red", linetype = "dashed", linewidth = 1) +  # Customize line color and style
-#   facet_wrap(~cma_name) +
-#   labs(
-#     title = "Motor vehicle Traffic Injury Crashes per 100 km of road by Vandix Quintile",
-#     x = "VanDIX Quintile",
-#     y = "Rate per 100 km road",
-#   ) +
-#   theme_minimal() +  # Use a minimal theme
-#   theme(
-#     plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),  # Center and style title
-#     axis.title = element_text(size = 14),
-#     axis.text = element_text(size = 12),
-#     axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
-#     strip.text = element_text(size = 12, face = "bold")  # Style facet labels
-#   )
-
 
 
 equation_data <- bc_da %>%
@@ -2167,65 +2252,62 @@ equation_data <- bc_da %>%
   arrange(region_name)
 
 
+lr_scatter <- function(outcome, title, subtitle) {
+  # Create the plot
+  bc_da %>%
+    st_drop_geometry() %>%
+    filter(!is.na(region_name)) %>%
+    mutate(region_name = factor(region_name, levels = regions$region_name)) %>%
+    ggplot(aes(x = vandix_z, y = {{outcome}})) +
+    geom_point(alpha = 0.25) +
+    stat_smooth(
+      method = "lm",
+      se = FALSE,
+      colour = "black",
+      linetype = "dashed",
+      linewidth = 0.75
+    ) +
+    facet_wrap( ~ region_name) +
+    labs(
+      title = title,
+      subtitle = subtitle,
+      x = "VanDIX (Increasing Deprivation)",
+      y = "Injury Crashes per 10km of Road"
+    ) +
+    geom_label(
+      data = equation_data,
+      label.size = NA,
+      aes(x = Inf, y = Inf, label = full_equation),
+      hjust = 1.1,
+      vjust = 1.5,
+      size = 3,
+      colour = "black",
+    ) +
+    hrbrthemes::theme_ipsum(
+      grid = "XxYy",
+      ticks = TRUE)
+  
+  
+}
 
-# Create the plot
-bc_da %>%
-  st_drop_geometry() %>%
-  filter(!is.na(region_name)) %>% 
-    mutate(region_name = factor(region_name, levels = regions$region_name)) %>% 
-  ggplot(aes(x = vandix_z, y = casualty_claims_rate)) +
-  geom_point(alpha = 0.1) +
-    stat_smooth(method = "lm", se = FALSE, color = "red", linetype = "dashed", linewidth = 1) +
-  # stat_smooth(method = "loess", se = TRUE, color = "red", linetype = "dashed", linewidth = 1,span = 0.8) +
-  facet_wrap(~region_name) +
-  labs(
-    title = "Crash Rates per 10km of Road by VanDIX score",
-    x = "Neighbourhood Deprivation",
-    y = "Injury Crashes per 10km of Road"
-  ) +
-  theme_minimal() +
-  theme(
-    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10),
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    strip.text = element_text(size = 10, face = "bold")
-  ) +
-  # Add the regression equation to each facet
-  geom_text(data = equation_data,
-            aes(x = Inf, y = Inf, label = full_equation), 
-            hjust = 1.1, vjust = 1.5,
-            size = 4)
+crude_rates_all <- lr_scatter(casualty_claims_rate, title = "All Injury Crash Rates by Neighbourhood Deprivation", subtitle = "At Dissemination Area Level")
+
+ggsave(crude_rates_all,
+  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/crude_rates_all.jpeg",
+  units = "mm",
+  height =280,
+  width =  280,
+  dpi = 300
+)
 
 
-
+crude_rates_all
 ```
 
 
 #### Bicycle-Motor Vehicle Traffic Injury Crashes
 
 ```{r, echo = FALSE, fig.width= 7.5, fig.height=10,warning=FALSE,message=FALSE}
-# 
-# crude_rates %>% 
-#   remove_missing() %>% 
-#   ggplot(aes(x = vandix_quintile,y =cyclist_casualty_claims_rate,group = 1)) + 
-#   geom_point() + 
-#   stat_smooth(method = "lm", se = FALSE, color = "red", linetype = "dashed", linewidth = 1) +  # Customize line color and style
-#   facet_wrap(~cma_name) +
-#   labs(
-#     title = "Bicycle-Motor Vehicle Traffic Injury Crashes per 100 km of road by Vandix Quintile",
-#     x = "VanDIX Quintile",
-#     y = "Rate per 100 km road",
-#   ) +
-#   theme_minimal() +  # Use a minimal theme
-#   theme(
-#     plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),  # Center and style title
-#     axis.title = element_text(size = 14),
-#     axis.text = element_text(size = 12),
-#     axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
-#     strip.text = element_text(size = 12, face = "bold")  # Style facet labels
-#   )
-
 
 
 equation_data <- bc_da %>%
@@ -2253,34 +2335,17 @@ equation_data <- bc_da %>%
 
 
 
-# Create the plot
-bc_da %>%
-  st_drop_geometry() %>%
-  filter(!is.na(region_name)) %>% 
+crude_rates_cyclists <- lr_scatter(cyclist_casualty_claims_rate, title = "Cyclist Involved Injury Crash Rates by Neighbourhood Deprivation", subtitle = "At Dissemination Area Level")
 
-  ggplot(aes(x = vandix_z, y = cyclist_casualty_claims_rate)) +
-  geom_point(alpha = 0.2) +
-  stat_smooth(method = "lm", se = FALSE, color = "red", linetype = "dashed", linewidth = 1) +
-  facet_wrap(~region_name) +
-  labs(
-    title = "Cyclist-Motor vehicle Crash Rates per 10km of Road by VanDIX score",
-    x = "Neighbourhood Deprivation",
-    y = "Injury Crashes per 10km of Road"
-  ) +
-  theme_minimal() +
-  theme(
-    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10),
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    strip.text = element_text(size = 10, face = "bold")
-  ) +
-  # Add the regression equation to each facet
-  geom_text(data = equation_data,
-            aes(x = Inf, y = Inf, label = full_equation), 
-            hjust = 1.1, vjust = 1.5,
-            size = 4)
+ggsave(crude_rates_cyclists,
+  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/crude_rates_bicycle.jpeg",
+  units = "mm",
+  height =280,
+  width =  280,
+  dpi = 300
+)
 
+crude_rates_cyclists
 ```
 
 
@@ -2288,27 +2353,6 @@ bc_da %>%
 
 ```{r, echo = FALSE, fig.width= 7.5, fig.height=10,warning=FALSE,message=FALSE}
 
-# crude_rates %>% 
-#   remove_missing() %>% 
-#   ggplot(aes(x = vandix_quintile,y =pedestrian_casualty_claims_rate,group = 1)) + 
-#   geom_point() + 
-#   stat_smooth(method = "lm", se = FALSE, color = "red", linetype = "dashed", linewidth = 1) +  # Customize line color and style
-#   facet_wrap(~cma_name) +
-#   labs(
-#     title = "Pedestrian-Motor Vehicle Traffic Injury Crashes per 100 km of road by Vandix Quintile",
-#     x = "VanDIX Quintile",
-#     y = "Rate per 100 km road",
-#   ) +
-#   theme_minimal() +  # Use a minimal theme
-#   theme(
-#     plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),  # Center and style title
-#     axis.title = element_text(size = 14),
-#     axis.text = element_text(size = 12),
-#     axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
-#     strip.text = element_text(size = 12, face = "bold")  # Style facet labels
-#     
-#     
-  # )
 
 
 equation_data <- bc_da %>%
@@ -2336,33 +2380,18 @@ equation_data <- bc_da %>%
 
 
 
-# Create the plot
-bc_da %>%
-  st_drop_geometry() %>%
-  filter(!is.na(region_name)) %>% 
-  ggplot(aes(x = vandix_z, y =pedestrian_casualty_claims_rate)) +
-  geom_point(alpha = 0.2) +
-  stat_smooth(method = "lm", se = FALSE, color = "red", linetype = "dashed", linewidth = 1) +
-  facet_wrap(~region_name) +
-  labs(
-    title = "Cyclist-Motor vehicle Crash Rates per 10km of Road by VanDIX score",
-    x = "Neighbourhood Deprivation",
-    y = "Injury Crashes per 10km of Road"
-  ) +
-  theme_minimal() +
-  theme(
-    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10),
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    strip.text = element_text(size = 10, face = "bold")
-  ) +
-  # Add the regression equation to each facet
-  geom_text(data = equation_data,
-            aes(x = Inf, y = Inf, label = full_equation), 
-            hjust = 1.1, vjust = 1.5,
-            size = 4)
+crude_rates_pedestrians <- lr_scatter(pedestrian_casualty_claims_rate, title = "Pedestrian Involved Injury Crash Rates by Neighbourhood Deprivation", subtitle = "At Dissemination Area Level")
+
+ggsave(crude_rates_pedestrians,
+  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/crude_rates_pedestrians.jpeg",
+  units = "mm",
+  height =280,
+  width =  280,
+  dpi = 300
+)
+crude_rates_pedestrians
 ```
+
 
 
 ### Spatial Models
@@ -2371,143 +2400,702 @@ bc_da %>%
 
 ```{r, echo = FALSE, fig.width= 7.5, fig.height=10,warning=FALSE,message=FALSE}
 
-all$`All Injury Claims` %>%
-  select(-Outcome) %>%
-  flextable() %>%
-  merge_v(j = ~Variable) %>%
-  footnote(i = 1, j = 4,
-           value = as_paragraph(
-             c("Adjusted for (i) total length of roads; (ii) proportion of roads classified as highway or arterial; (iii) the Canadian Active Living Environment Index; (iv) the Canadian Bikeway Comfort and Safety Index; (v) Total population")
-           ),
-           ref_symbols = c("a"),
-           part = "header")%>%
-  set_table_properties( layout = "autofit") %>%
-  valign( valign = "bottom", part = "header") %>%
-  set_caption("Relationship between VanDIX score and total number of motor-vehicle crash insurance claims from 2019-2023.") %>%
-  theme_booktabs()
+irr_table <- function(table,caption) {
+  table %>%
+    select(-Outcome, -variable) %>%
+    flextable() %>%
+    add_footer_lines(values = "SD = Standard Deviation; IRR = Incidence Rate Ratio; CI = Credible Interval") %>% 
+    footnote(
+      i = c(1),
+      j = c(3, 4, 5, 6),
+      value = as_paragraph(
+        c("Fit with idd random effect at dissemination area level",
+          "Fit with idd and spatial random effect at dissemination area level",
+          "Fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of roads",
+          "Fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of roads; (ii) proportion of roads classified as highway or arterial; (iii) the Canadian Active Living Environment Index; (iv) the Canadian Bikeway Comfort and Safety Index; (v) total population"
+        )
+      ),
+      ref_symbols = c("a", "b", "c", "d"),
+      part = "header",
+      inline = FALSE
+    ) %>%
+    set_table_properties(layout = "autofit") %>%
+    valign(valign = "bottom", part = "header") %>%
+    set_caption(
+      caption
+    ) %>%
+    merge_v(j = ~ Variable) %>%
+    theme_booktabs()
+}
 
-
-all$`All Injury Claims`  %>% 
-  mutate(Fully_Adjusted_IRR = gsub(" ", "", `Fully Adjusted IRR (95% CI)`), # Remove spaces
-         estimate = as.numeric(gsub("\\(.*", "", `Fully Adjusted IRR (95% CI)`)),
-         lower_ci = as.numeric(gsub(".*\\(([^,]*),.*", "\\1", `Fully Adjusted IRR (95% CI)`)),
-         upper_ci = as.numeric(gsub(".*,(.*)\\)", "\\1", `Fully Adjusted IRR (95% CI)`))) %>% 
+forest_plot <- function(table,title,subtitle){
+  
+  
+table %>% 
+    left_join(region_pop, by = c("Region"="region_name")) %>% 
+    mutate(`Population (1000s)` = population/1000) %>% 
+  mutate(Adjusted_IRR = gsub(" ", "", `Spatial Adjusted IRR (95% CI)`), # Remove spaces
+         estimate = as.numeric(gsub("\\(.*", "", `Spatial Adjusted IRR (95% CI)`)),
+         lower_ci = as.numeric(gsub(".*\\(([^,]*),.*", "\\1", `Spatial Adjusted IRR (95% CI)`)),
+         upper_ci = as.numeric(gsub(".*,(.*)\\)", "\\1", `Spatial Adjusted IRR (95% CI)`))) %>% 
 ggplot(aes(x = fct_reorder(Region, estimate), y = estimate)) +
-  geom_point(size = 4) +  # Increased point size and added color for differentiation
-  geom_errorbar(aes(ymin = lower_ci, ymax = upper_ci), width = 0.3, alpha = 0.6) +  # Lighter color for CI and thicker error bars
-  geom_hline(yintercept = 1, linetype = "dashed", color = "red", linewidth = 1) +  # Stronger line at IRR = 1
-  coord_flip() +  # Keep flipped coordinates for readability
-  scale_y_log10(breaks = c(0.1, 0.5, 1, 2, 10), labels = c(0.1, 0.5, 1, 2, 10)) +  # Log10 scale
+  geom_linerange(aes(ymin = lower_ci, ymax = upper_ci)) + 
+      geom_point(aes(size = `Population (1000s)`)) +  
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red", linewidth = 1) +  
+    coord_flip() +  
+  scale_y_log10() +  
+    scale_size_area(max_size = 15) + 
   labs(
-    title = "Neighborhood Deprivation and Road Traffic Injury Crashes by Region",
-    subtitle = "Each standard deviation increase in VanDIX increases road traffic injury crashes",
-    x = "Census Metropolitan/Agglomeration Area",
+   title = title,
+   subtitle = subtitle,
+    x = "Region",
     y = "Incidence Rate Ratio (Deprivation Index in Standard Deviations)"
   ) +
-  theme_bw() +
-  theme(
-    axis.text.y = element_text(size = 9),  # Increase y-axis text size for legibility
-    axis.title.x = element_text(size = 11),  # Make axis titles more prominent
-    plot.title = element_text(size = 12, face = "bold"),  # Bolder and larger title
-    plot.subtitle = element_text(size = 10),  # Adjust subtitle size
-    legend.position = "none"  # Remove legend as it's not needed for simple color encoding
-  )
+  hrbrthemes::theme_ipsum(axis = "xy",grid = "Xx",ticks = TRUE,base_size = 12,axis_title_size = 11)
+}
+
+irr_table(all$`All Injury Claims`,"Regional associations between VanDIX score and number of motor-vehicle crash insurance claims from 2019-2023 fit with nonspatial and spatial models and different covariate values.")
+
+forest_plot(all$`All Injury Claims`,title = "Neighborhood Deprivation and All Road Traffic Injury Crashes by Region",  subtitle = "Each standard deviation increase in VanDIX increases the incidence road traffic injury crashes in all regions (IRR>1)")
+
+
 ```
 
 #### Bicycle-Motor Vehicle Traffic Injury Crashes
 
 
 ```{r, echo = FALSE, fig.width= 7.5, fig.height=10,warning=FALSE,message=FALSE}
-all$`Cyclist Injury Claims` %>%
-  select(-Outcome) %>%
-  flextable() %>%
-  merge_v(j = ~Variable) %>%
-  footnote(i = 1, j = 4,
-           value = as_paragraph(
-             c("Adjusted for (i) total length of roads; (ii) proportion of roads classified as highway or arterial; (iii) the Canadian Active Living Environment Index; (iv) the Canadian Bikeway Comfort and Safety Index; (v) Total population")
-           ),
-           ref_symbols = c("a"),
-           part = "header")%>%
-  set_table_properties( layout = "autofit") %>%
-  valign( valign = "bottom", part = "header") %>%
-  set_caption("Relationship between VanDIX score and total number of motor-vehicle - cyclist crash insurance claims from 2019-2023.") %>%
-  theme_booktabs()
 
-all$`Cyclist Injury Claims`  %>% 
-  mutate(Fully_Adjusted_IRR = gsub(" ", "", `Fully Adjusted IRR (95% CI)`), # Remove spaces
-         estimate = as.numeric(gsub("\\(.*", "", `Fully Adjusted IRR (95% CI)`)),
-         lower_ci = as.numeric(gsub(".*\\(([^,]*),.*", "\\1", `Fully Adjusted IRR (95% CI)`)),
-         upper_ci = as.numeric(gsub(".*,(.*)\\)", "\\1", `Fully Adjusted IRR (95% CI)`))) %>% 
-ggplot(aes(x = fct_reorder(Region, estimate), y = estimate)) +
-  geom_point(size = 4) +  # Increased point size and added color for differentiation
-  geom_errorbar(aes(ymin = lower_ci, ymax = upper_ci), width = 0.3, alpha = 0.6) +  # Lighter color for CI and thicker error bars
-  geom_hline(yintercept = 1, linetype = "dashed", color = "red", linewidth = 1) +  # Stronger line at IRR = 1
-  coord_flip() +  # Keep flipped coordinates for readability
-  scale_y_log10(breaks = c(0.1, 0.5, 1, 2, 10), labels = c(0.1, 0.5, 1, 2, 10)) +  # Log10 scale
-  labs(
-    title = "Neighborhood Deprivation and Cyclist-Motor Vehicle Traffic Injury Crashes by Region",
-    subtitle = "Each standard deviation increase in VanDIX increases road traffic injury crashes",
-    x = "Census Metropolitan/Agglomeration Area",
-    y = "Incidence Rate Ratio (Deprivation Index in Standard Deviations)"
-  ) +
-  theme_bw() +
-  theme(
-    axis.text.y = element_text(size = 9),  # Increase y-axis text size for legibility
-    axis.title.x = element_text(size = 11),  # Make axis titles more prominent
-    plot.title = element_text(size = 12, face = "bold"),  # Bolder and larger title
-    plot.subtitle = element_text(size = 10),  # Adjust subtitle size
-    legend.position = "none"  # Remove legend as it's not needed for simple color encoding
-  )
+
+irr_table(all$`Cyclist Injury Claims`,"Regional associations between VanDIX score and number of motor-vehicle crash insurance claims involving a cyclist from 2019-2023 fit with nonspatial and spatial models and different covariate values.")
+
+
+forest_plot(all$`Cyclist Injury Claims`,title = "Neighborhood Deprivation and All Road Traffic Injury Crashes by Region",  subtitle = "Each standard deviation increase in VanDIX increases the incidence road traffic injury crashes in nearly all regions (IRR>1) with much wider credible intervals")
+
 ```
 
 #### Pedestrian-Motor Vehicle Traffic Injury Crashes
 
 ```{r, echo = FALSE, fig.width= 7.5, fig.height=10,warning=FALSE,message=FALSE}
-all$`Pedestrian Injury Claims` %>%
-  select(-Outcome) %>%
-  flextable() %>%
-  merge_v(j = ~Variable) %>%
-  footnote(i = 1, j = 4,
-           value = as_paragraph(
-             c("Adjusted for (i) total length of roads; (ii) proportion of roads classified as highway or arterial; (iii) the Canadian Active Living Environment Index; (iv) the Canadian Bikeway Comfort and Safety Index; (v) Total population")
-           ),
-           ref_symbols = c("a"),
-           part = "header")%>%
-  set_table_properties( layout = "autofit") %>%
-  valign( valign = "bottom", part = "header") %>%
-  set_caption("Table 3: Relationship between VanDIX score and total number of motor-vehicle - pedestrian crash insurance claims from 2019-2023.") %>%
-  theme_booktabs()
 
-all$`Pedestrian Injury Claims`  %>% 
-  mutate(Fully_Adjusted_IRR = gsub(" ", "", `Fully Adjusted IRR (95% CI)`), # Remove spaces
-         estimate = as.numeric(gsub("\\(.*", "", `Fully Adjusted IRR (95% CI)`)),
-         lower_ci = as.numeric(gsub(".*\\(([^,]*),.*", "\\1", `Fully Adjusted IRR (95% CI)`)),
-         upper_ci = as.numeric(gsub(".*,(.*)\\)", "\\1", `Fully Adjusted IRR (95% CI)`))) %>% 
-ggplot(aes(x = fct_reorder(Region, estimate), y = estimate)) +
-  geom_point(size = 4) +  # Increased point size and added color for differentiation
-  geom_errorbar(aes(ymin = lower_ci, ymax = upper_ci), width = 0.3, alpha = 0.6) +  # Lighter color for CI and thicker error bars
-  geom_hline(yintercept = 1, linetype = "dashed", color = "red", linewidth = 1) +  # Stronger line at IRR = 1
-  coord_flip() +  # Keep flipped coordinates for readability
-  scale_y_log10(breaks = c(0.1, 0.5, 1, 2, 10), labels = c(0.1, 0.5, 1, 2, 10)) +  # Log10 scale
-  labs(
-    title = "Neighborhood Deprivation and Pedestrian-Motor Vehicle Traffic Injury Crashes by Region",
-    subtitle = "Each standard deviation increase in VanDIX increases road traffic injury crashes",
-    x = "Census Metropolitan/Agglomeration Area",
-    y = "Incidence Rate Ratio (Deprivation Index in Standard Deviations)"
-  ) +
-  theme_bw() +
-  theme(
-    axis.text.y = element_text(size = 9),  # Increase y-axis text size for legibility
-    axis.title.x = element_text(size = 11),  # Make axis titles more prominent
-    plot.title = element_text(size = 12, face = "bold"),  # Bolder and larger title
-    plot.subtitle = element_text(size = 10),  # Adjust subtitle size
-    legend.position = "none"  # Remove legend as it's not needed for simple color encoding
-  )
+irr_table(all$`Pedestrian Injury Claims`,"Regional associations between VanDIX score and number of motor-vehicle crash insurance claims involving a pedestrian from 2019-2023 fit with nonspatial and spatial models and different covariate values.")
 
+forest_plot(all$`Pedestrian Injury Claims`,title = "Neighborhood Deprivation and All Road Traffic Injury Crashes by Region",  subtitle = "Each standard deviation increase in VanDIX increases the incidence road traffic injury crashes in  all regions (IRR>1)")
 ```
 
 
 # Supplementary Material
+
+
+## Meta-analysis
+
+```{r}
+all$`All Injury Claims`
+
+
+
+```
+
+
+
+
+
+
+
+
+## Model Details
+
+### Vancouver Model Details
+
+#### All
+```{r, echo = FALSE, message = FALSE, fig.width= 7.5, fig.height=10}
+
+summarise_models_details <- function(inla_model_list){
+
+results <- lapply(inla_model_list, function(x) tidy_inla(x$summary.fixed,exponentiate = FALSE,sigfig = 3) %>% mutate(term = row.names(.)))
+
+prs <- function(x,n.dig = 3){
+
+  formatC(signif(x,n.dig), format='f', big.mark = ",",digits = n.dig)
+}
+
+results_hyper_parameters <- lapply(inla_model_list, function(x) x$summary.hyper %>% rownames_to_column(var = "term"))
+# Identifying unique names of the tibbles in the list
+
+results_hyper_parameters_combined <- reduce(results_hyper_parameters, full_join, by = "term") %>% 
+        mutate(
+      `Nonspatial` = ifelse(is.na(mean.x), "", paste0(
+        prs(mean.x),
+        " (",
+        prs(`0.025quant.x`),
+        ", ",
+        prs(`0.975quant.x`),
+        ")"
+      )),
+      `Unadjusted` = ifelse(is.na(mean.y), "", paste0(
+        prs(mean.y),
+        " (",
+        prs(`0.025quant.y`),
+        ", ",
+        prs(`0.975quant.y`),
+        ")"
+      )),
+      `Adjusted1` = ifelse(is.na(mean.x.x), "",paste0(
+        prs(mean.x.x),
+        " (",
+        prs(`0.025quant.x.x`),
+        ", ",
+        prs(`0.975quant.x.x`),
+        ")"
+      )),
+            `Adjusted2` = paste0(
+        prs(mean.y.y),
+        " (",
+        prs(`0.025quant.y.y`),
+        ", ",
+        prs(`0.975quant.y.y`),
+        ")"
+      ),
+    ) %>%
+    select(term,`Nonspatial`,`Unadjusted`,`Adjusted1`,`Adjusted2`)
+# Applying function to each unique name
+results_combined <- reduce(results, full_join, by = "term") %>% 
+        mutate(
+      `Nonspatial` = ifelse(is.na(estimate.x), "", paste0(
+        prs(estimate.x),
+        " (",
+        prs(`lower_ci.x`),
+        ", ",
+        prs(`upper_ci.x`),
+        ")"
+      )),
+      `Unadjusted` = ifelse(is.na(estimate.y), "", paste0(
+        prs(estimate.y),
+        " (",
+        prs(`lower_ci.y`),
+        ", ",
+        prs(`upper_ci.y`),
+        ")"
+      )),
+      `Adjusted1` = ifelse(is.na(estimate.x.x), "",paste0(
+        prs(estimate.x.x),
+        " (",
+        prs(`lower_ci.x.x`),
+        ", ",
+        prs(`upper_ci.x.x`),
+        ")"
+      )),
+            `Adjusted2` = paste0(
+        prs(estimate.y.y),
+        " (",
+        prs(`lower_ci.y.y`),
+        ", ",
+        prs(`upper_ci.y.y`),
+        ")"
+      ),
+    ) %>%
+    select(term,`Nonspatial`,`Unadjusted`,`Adjusted1`,`Adjusted2`)
+
+
+
+
+extract_metrics <- function(model) {
+  tibble(
+    term = c("WAIC","CPO","DIC"),
+    estimate = c(model$waic$waic,
+                 sum(log(model$cpo$cpo)) * -1,#CPO is a cross-validatory criterion for model assessment that where the value for each observation is the posterior probability of observing that observation when the model is fit using all data except for itself.  Large values indicate a better fit of the model to the data. A summary measure for CPO where smaller values indicate better fit. 
+                 model$dic$dic)
+                 
+    )
+}
+
+model_comparison_combined <- inla_model_list %>%
+  map(extract_metrics) %>% 
+  map(~mutate(.,estimate = round(estimate,1))) %>% 
+  reduce(., full_join, by = "term") %>% 
+  rename( Nonspatial = estimate.x, Unadjusted = estimate.y, Adjusted1 = estimate.x.x, Adjusted2 = estimate.y.y) %>% 
+  mutate(across(everything(.),as.character))
+  
+  model_comparison_combined <-  model_comparison_combined %>%
+  add_row(term = "Model Comparison Metrics",.before = -Inf)
+
+results_hyper_parameters_combined <- results_hyper_parameters_combined %>%
+  add_row(term = "Hyper Parameters",.before = -Inf)
+
+results_combined <- results_combined %>%
+  add_row(.,term = "Fixed Effects",.before = -Inf)
+
+
+result_tibbles <- bind_rows(results_combined,results_hyper_parameters_combined,model_comparison_combined) %>% 
+    mutate( 
+      Nonspatial = str_remove_all(Nonspatial,"NA \\(|NA\\,|NA\\)"),
+      Unadjusted = str_remove_all(Unadjusted,"NA \\(|NA\\,|NA\\)"),
+           Adjusted1 = str_remove_all(Adjusted1,"NA \\(|NA\\,|NA\\)"),
+           Adjusted2 = str_remove_all(Adjusted2,"NA \\(|NA\\,|NA\\)")
+    )
+
+return(result_tibbles)
+}
+
+  
+  
+flextable_model_details <- function(table,caption){
+  
+table %>%  
+   flextable() %>%
+    footnote(
+      i = c(1),
+      j = c(2, 3, 4, 5),
+      value = as_paragraph(
+        c("Fit with idd random effect at dissemination area level",
+          "Fit with idd and spatial random effect at dissemination area level",
+          "Fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of roads",
+          "Fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of roads; (ii) proportion of roads classified as highway or arterial; (iii) the Canadian Active Living Environment Index; (iv) the Canadian Bikeway Comfort and Safety Index; (v) total population"
+        )
+      ),
+      ref_symbols = c("a", "b", "c", "d"),
+      part = "header",
+      inline = FALSE
+    ) %>%
+  theme_booktabs() %>% 
+  hline(c(1,8,9,11,12)) %>% 
+  set_table_properties(layout = "autofit") %>%
+  valign(valign = "bottom", part = "header") %>% 
+    set_caption(caption)
+}
+  
+  
+ 
+
+
+bc_boundary <- cancensus::get_census("CA21",
+                                  level = "CSD",
+                                  regions = list(PR=59),geo_format = "sf") 
+
+bcb <- bc_boundary %>% 
+  st_union() 
+
+vancouver_sf <- st_transform(vancouver_sf,crs=26910)
+vancouver_sf$re_all_adjusted <- van_models_1$models$Adjusted2$summary.random$ui[1:nrow(vancouver_sf), "mean"]
+
+plot_re <- function(sf,fill_var, subtitle) {
+ggplot() + 
+  geom_sf(data = bcb %>% st_transform(st_crs(sf)), fill = "grey70", colour = "black") +
+  geom_sf(data = sf, aes(fill = {{fill_var}})) +
+  scale_fill_gradient2( 
+    name = "Random Effect",
+    midpoint = 0,
+    low = "#009392",
+    mid = "#f1eac8",
+    high = "#d0587e"
+  ) +
+  theme_void(base_size = 11) +
+  theme(legend.position = "bottom",
+            panel.background = element_rect(fill = "#a3c1e0"),
+        panel.border = element_rect(colour="black",fill = NA)# Light blue ocean color
+) +
+  labs(
+    title = "Posterior mean of the BYM2 random effect", 
+    subtitle = subtitle
+  ) + 
+  coord_sf(
+    xlim = c(st_bbox(sf)["xmin"], st_bbox(sf)["xmax"]),
+    ylim = c(st_bbox(sf)["ymin"], st_bbox(sf)["ymax"])
+  ) + 
+  ggspatial::annotation_scale(location = "bl", width_hint = 0.25,)  # 'bl' = bottom left
+}
+
+
+
+
+
+
+
+
+
+
+summarise_models_details(van_models_1$models) %>% flextable_model_details(., caption = "All Motor Vehicle Claims for Vancouver Region")
+
+plot_re(vancouver_sf,re_all_adjusted,"Adjusted Model for all Motor Vehicle Claims")
+
+ 
+```
+
+#### Cyclists
+
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(van_models_2$models) %>% flextable_model_details(., caption = "Cyclist - Motor Vehicle Claims for Vancouver Region")
+
+vancouver_sf$re_cyclists_adjusted <- van_models_2$models$Adjusted2$summary.random$ui[1:nrow(vancouver_sf), "mean"]
+
+plot_re(vancouver_sf,re_cyclists_adjusted,"Adjusted Model for Cyclist - Motor Vehicle Claims")
+
+ 
+```
+
+#### Pedestrians
+
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(van_models_3$models) %>% flextable_model_details(., caption = "Pedestrian - Motor Vehicle Claims for Vancouver Region")
+
+vancouver_sf$re_pedestrians_adjusted <- van_models_3$models$Adjusted2$summary.random$ui[1:nrow(vancouver_sf), "mean"]
+
+plot_re(vancouver_sf,re_pedestrians_adjusted,"Adjusted Model for Pedestrian - Motor Vehicle Claims")
+
+
+```
+
+### Victoria Model Details
+
+#### All
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(victoria_models_1$models) %>% flextable_model_details(., caption = "All Motor Vehicle Claims for Victoria Region")
+
+
+
+victoria_sf <- st_transform(victoria_sf,crs=26910)
+victoria_sf$re_all_adjusted <- victoria_models_1$models$Adjusted2$summary.random$ui[1:nrow(victoria_sf), "mean"]
+
+
+plot_re(victoria_sf,re_all_adjusted,"Adjusted model for all Motor Vehicle Claims")
+
+
+ 
+```
+
+#### Cyclists
+
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(victoria_models_2$models) %>% flextable_model_details(., caption = "Cyclist- Motor Vehicle Claims for Victoria Region")
+
+
+victoria_sf$re_cyclists_adjusted <- victoria_models_2$models$Adjusted2$summary.random$ui[1:nrow(victoria_sf), "mean"]
+
+plot_re(victoria_sf,re_cyclists_adjusted,"Adjusted Model for Cyclist - Motor Vehicle Claims")
+
+ 
+```
+
+#### Pedestrians
+
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(victoria_models_3$models) %>% flextable_model_details(., caption = "Pedestrian - Motor Vehicle Claims for Victoria Region")
+
+victoria_sf$re_pedestrians_adjusted <- victoria_models_3$models$Adjusted2$summary.random$ui[1:nrow(victoria_sf), "mean"]
+
+plot_re(victoria_sf,re_pedestrians_adjusted,"Adjusted Model for Pedestrian - Motor Vehicle Claims")
+
+
+```
+
+
+### Central Island - Powell River Model Details
+#### All
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(nanaimo_models_1$models) %>% flextable_model_details(., caption = "All Motor Vehicle Claims for Central Island - Powell River Region")
+
+
+
+nanaimo_sf <- st_transform(nanaimo_sf,crs=26910)
+nanaimo_sf$re_all_adjusted <- nanaimo_models_1$models$Adjusted2$summary.random$ui[1:nrow(nanaimo_sf), "mean"]
+
+
+plot_re(nanaimo_sf,re_all_adjusted,"Adjusted model for all Motor Vehicle Claims")
+
+
+ 
+```
+
+#### Cyclists
+
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(nanaimo_models_2$models) %>% flextable_model_details(., caption = "Cyclist- Motor Vehicle Claims for Central Island - Powell River Region")
+
+
+nanaimo_sf$re_cyclists_adjusted <- nanaimo_models_2$models$Adjusted2$summary.random$ui[1:nrow(nanaimo_sf), "mean"]
+
+plot_re(nanaimo_sf,re_cyclists_adjusted,"Adjusted Model for Cyclist - Motor Vehicle Claims")
+
+ 
+```
+
+#### Pedestrians
+
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(nanaimo_models_3$models) %>% flextable_model_details(., caption = "Pedestrian - Motor Vehicle Claims for Central Island - Powell River Region")
+
+nanaimo_sf$re_pedestrians_adjusted <- nanaimo_models_3$models$Adjusted2$summary.random$ui[1:nrow(nanaimo_sf), "mean"]
+
+plot_re(nanaimo_sf,re_pedestrians_adjusted,"Adjusted Model for Pedestrian - Motor Vehicle Claims")
+
+
+```
+
+
+
+### Okanagan Model Details
+#### All
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(okanagan_models_1$models) %>% flextable_model_details(., caption = "All Motor Vehicle Claims for Okanagan Region")
+
+
+
+okanagan_sf <- st_transform(okanagan_sf,crs=26910)
+okanagan_sf$re_all_adjusted <- okanagan_models_1$models$Adjusted2$summary.random$ui[1:nrow(okanagan_sf), "mean"]
+
+
+plot_re(okanagan_sf,re_all_adjusted,"Adjusted model for all Motor Vehicle Claims")
+
+
+ 
+```
+
+#### Cyclists
+
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(okanagan_models_2$models) %>% flextable_model_details(., caption = "Cyclist- Motor Vehicle Claims for Okanagan Region")
+
+
+okanagan_sf$re_cyclists_adjusted <- okanagan_models_2$models$Adjusted2$summary.random$ui[1:nrow(okanagan_sf), "mean"]
+
+plot_re(okanagan_sf,re_cyclists_adjusted,"Adjusted Model for Cyclist - Motor Vehicle Claims")
+
+ 
+```
+
+#### Pedestrians
+
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(okanagan_models_3$models) %>% flextable_model_details(., caption = "Pedestrian - Motor Vehicle Claims for Okanagan Region")
+
+okanagan_sf$re_pedestrians_adjusted <- okanagan_models_3$models$Adjusted2$summary.random$ui[1:nrow(okanagan_sf), "mean"]
+
+plot_re(okanagan_sf,re_pedestrians_adjusted,"Adjusted Model for Pedestrian - Motor Vehicle Claims")
+
+
+```
+
+
+
+
+
+### Fraser Valley Model Details
+
+#### All
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(fraser_valley_models_1$models) %>% flextable_model_details(., caption = "All Motor Vehicle Claims for Fraser Valley Region")
+
+
+
+fraser_valley_sf <- st_transform(fraser_valley_sf,crs=26910)
+fraser_valley_sf$re_all_adjusted <- fraser_valley_models_1$models$Adjusted2$summary.random$ui[1:nrow(fraser_valley_sf), "mean"]
+
+
+plot_re(fraser_valley_sf,re_all_adjusted,"Adjusted model for all Motor Vehicle Claims")
+
+
+ 
+```
+
+#### Cyclists
+
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(fraser_valley_models_2$models) %>% flextable_model_details(., caption = "Cyclist- Motor Vehicle Claims for Fraser Valley Region")
+
+
+fraser_valley_sf$re_cyclists_adjusted <- fraser_valley_models_2$models$Adjusted2$summary.random$ui[1:nrow(fraser_valley_sf), "mean"]
+
+plot_re(fraser_valley_sf,re_cyclists_adjusted,"Adjusted Model for Cyclist - Motor Vehicle Claims")
+
+ 
+```
+
+#### Pedestrians
+
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(fraser_valley_models_3$models) %>% flextable_model_details(., caption = "Pedestrian - Motor Vehicle Claims for  Fraser Valley Region")
+
+fraser_valley_sf$re_pedestrians_adjusted <- fraser_valley_models_3$models$Adjusted2$summary.random$ui[1:nrow(fraser_valley_sf), "mean"]
+
+plot_re(fraser_valley_sf,re_pedestrians_adjusted,"Adjusted Model for Pedestrian - Motor Vehicle Claims")
+
+
+```
+
+
+
+### North Central Model Details
+#### All
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(north_central_models_1$models) %>% flextable_model_details(., caption = "All Motor Vehicle Claims for North Central Region")
+
+
+
+north_central_sf <- st_transform(north_central_sf,crs=26910)
+north_central_sf$re_all_adjusted <- north_central_models_1$models$Adjusted2$summary.random$ui[1:nrow(north_central_sf), "mean"]
+
+
+plot_re(north_central_sf,re_all_adjusted,"Adjusted model for all Motor Vehicle Claims")
+
+
+ 
+```
+
+#### Cyclists
+
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(north_central_models_2$models) %>% flextable_model_details(., caption = "Cyclist- Motor Vehicle Claims for North Central Region")
+
+
+north_central_sf$re_cyclists_adjusted <- north_central_models_2$models$Adjusted2$summary.random$ui[1:nrow(north_central_sf), "mean"]
+
+plot_re(north_central_sf,re_cyclists_adjusted,"Adjusted Model for Cyclist - Motor Vehicle Claims")
+
+ 
+```
+
+#### Pedestrians
+
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(north_central_models_3$models) %>% flextable_model_details(., caption = "Pedestrian - Motor Vehicle Claims for North Central Region")
+
+north_central_sf$re_pedestrians_adjusted <- north_central_models_3$models$Adjusted2$summary.random$ui[1:nrow(north_central_sf), "mean"]
+
+plot_re(north_central_sf,re_pedestrians_adjusted,"Adjusted Model for Pedestrian - Motor Vehicle Claims")
+
+
+```
+
+
+### Kamloops-Salmon Arm
+#### All
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(interior_models_1$models) %>% flextable_model_details(., caption = "All Motor Vehicle Claims for Kamloops-Salmon Arm Region")
+
+
+
+interior_sf <- st_transform(interior_sf,crs=26910)
+interior_sf$re_all_adjusted <- interior_models_1$models$Adjusted2$summary.random$ui[1:nrow(interior_sf), "mean"]
+
+
+plot_re(interior_sf,re_all_adjusted,"Adjusted model for all Motor Vehicle Claims")
+
+
+ 
+```
+
+#### Cyclists
+
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(interior_models_2$models) %>% flextable_model_details(., caption = "Cyclist- Motor Vehicle Claims for Kamloops-Salmon Arm Region")
+
+
+interior_sf$re_cyclists_adjusted <- interior_models_2$models$Adjusted2$summary.random$ui[1:nrow(interior_sf), "mean"]
+
+plot_re(interior_sf,re_cyclists_adjusted,"Adjusted Model for Cyclist - Motor Vehicle Claims")
+
+ 
+```
+
+#### Pedestrians
+
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(interior_models_3$models) %>% flextable_model_details(., caption = "Pedestrian - Motor Vehicle Claims for Kamloops-Salmon Arm Region")
+
+interior_sf$re_pedestrians_adjusted <- interior_models_3$models$Adjusted2$summary.random$ui[1:nrow(interior_sf), "mean"]
+
+plot_re(interior_sf,re_pedestrians_adjusted,"Adjusted Model for Pedestrian - Motor Vehicle Claims")
+
+
+```
+
+### Southeast
+#### All
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(southeast_models_1$models) %>% flextable_model_details(., caption = "All Motor Vehicle Claims for Southeast Region")
+
+
+
+southeast_sf <- st_transform(southeast_sf,crs=26910)
+southeast_sf$re_all_adjusted <- southeast_models_1$models$Adjusted2$summary.random$ui[1:nrow(southeast_sf), "mean"]
+
+
+plot_re(southeast_sf,re_all_adjusted,"Adjusted model for all Motor Vehicle Claims")
+
+
+ 
+```
+
+#### Cyclists
+
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(southeast_models_2$models) %>% flextable_model_details(., caption = "Cyclist- Motor Vehicle Claims for SoutheastRegion")
+
+
+southeast_sf$re_cyclists_adjusted <- southeast_models_2$models$Adjusted2$summary.random$ui[1:nrow(southeast_sf), "mean"]
+
+plot_re(southeast_sf,re_cyclists_adjusted,"Adjusted Model for Cyclist - Motor Vehicle Claims")
+
+ 
+```
+
+#### Pedestrians
+
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(southeast_models_3$models) %>% flextable_model_details(., caption = "Pedestrian - Motor Vehicle Claims for Southeast Region")
+
+southeast_sf$re_pedestrians_adjusted <- southeast_models_3$models$Adjusted2$summary.random$ui[1:nrow(southeast_sf), "mean"]
+
+plot_re(southeast_sf,re_pedestrians_adjusted,"Adjusted Model for Pedestrian - Motor Vehicle Claims")
+
+
+```
+
+
+### Northwest
+
+#### All
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(northwest_models_1$models) %>% flextable_model_details(., caption = "All Motor Vehicle Claims for Northwest Region")
+
+
+
+northwest_sf <- st_transform(northwest_sf,crs=26910)
+northwest_sf$re_all_adjusted <- northwest_models_1$models$Adjusted2$summary.random$ui[1:nrow(northwest_sf), "mean"]
+
+
+plot_re(northwest_sf,re_all_adjusted,"Adjusted model for all Motor Vehicle Claims")
+
+
+ 
+```
+
+#### Cyclists
+
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(northwest_models_2$models) %>% flextable_model_details(., caption = "Cyclist- Motor Vehicle Claims for NorthwestRegion")
+
+
+northwest_sf$re_cyclists_adjusted <- northwest_models_2$models$Adjusted2$summary.random$ui[1:nrow(northwest_sf), "mean"]
+
+plot_re(northwest_sf,re_cyclists_adjusted,"Adjusted Model for Cyclist - Motor Vehicle Claims")
+
+ 
+```
+
+#### Pedestrians
+
+```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
+summarise_models_details(northwest_models_3$models) %>% flextable_model_details(., caption = "Pedestrian - Motor Vehicle Claims for Northwest Region")
+
+northwest_sf$re_pedestrians_adjusted <- northwest_models_3$models$Adjusted2$summary.random$ui[1:nrow(northwest_sf), "mean"]
+
+plot_re(northwest_sf,re_pedestrians_adjusted,"Adjusted Model for Pedestrian - Motor Vehicle Claims")
+
+
+```
+
+
 
 ## Built Environment by VanDIX
 
@@ -2583,8 +3171,8 @@ bc_da %>%
   stat_smooth(method = "lm", se = FALSE, color = "red", linetype = "dashed", linewidth = 1) +
   facet_wrap(~region_name,nrow = 3) +
   labs(
-    title = "Proportion of Roads that are Arterial or Highway by VanDIX score",
-    x = "Neighbourhood Deprivation",
+    title = "Proportion of Roads that are Arterial or Highway by Neighbourhood Deprivation",
+    x = "VanDIX (Increasing Deprivation)",
     y = "% of roads that are arterial or highway"
   ) +
   theme_minimal() +
@@ -2642,8 +3230,8 @@ bc_da %>%
   stat_smooth(method = "lm", se = FALSE, color = "red", linetype = "dashed", linewidth = 1) +
   facet_wrap(~region_name) +
   labs(
-    title = "Active Living Environment Index by VanDIX score",
-    x = "Neighbourhood Deprivation",
+    title = "Active Living Environment Index by Neighbourhood Deprivation",
+    x = "VanDIX (Increasing Deprivation)",
     y = "ALE Index (SD) "
   ) +
   theme_minimal() +
@@ -2702,8 +3290,8 @@ bc_da %>%
   stat_smooth(method = "lm", se = FALSE, color = "red", linetype = "dashed", linewidth = 1) +
   facet_wrap(~region_name) +
   labs(
-    title = "Canadian Bikeway Comfort Index by VanDIX score",
-    x = "Neighbourhood Deprivation",
+    title = "Canadian Bikeway Comfort Index by Neighbourhood Deprivation",
+    x = "VanDIX (Increasing Deprivation)",
     y = "CanBICS Index (SD) "
   ) +
   theme_minimal() +
@@ -2724,823 +3312,13 @@ bc_da %>%
 
 - Of the 9 regions, we observed `r equation_data %>% filter(slope>0) %>% nrow()` had on average a positive relationship with deprivation index and increased access to better bicycle facilities. 
 
-
-## Model Details
-
-### Vancouver Model Details
-
-#### All
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
-
-summarise_models_details <- function(inla_model_list){
-
-results <- lapply(inla_model_list, function(x) tidy_inla(x$summary.fixed,exponentiate = FALSE,sigfig = 3) %>% mutate(term = row.names(.)))
-
-prs <- function(x,n.dig = 3){
-
-  formatC(signif(x,n.dig), format='f', big.mark = ",",digits = n.dig)
-}
-
-results_hyper_parameters <- lapply(inla_model_list, function(x) x$summary.hyper %>% rownames_to_column(var = "term"))
-# Identifying unique names of the tibbles in the list
-
-results_hyper_parameters_combined <- reduce(results_hyper_parameters, full_join, by = "term") %>% 
-        mutate(
-      `Unadjusted` = ifelse(is.na(mean.x), "", paste0(
-        prs(mean.x),
-        " (",
-        prs(`0.025quant.x`),
-        ", ",
-        prs(`0.975quant.x`),
-        ")"
-      )),
-      `Adjusted1` = paste0(
-        prs(mean.y),
-        " (",
-        prs(`0.025quant.y`),
-        ", ",
-        prs(`0.975quant.y`),
-        ")"
-      ),
-            `Adjusted2` = paste0(
-        prs(mean),
-        " (",
-        prs(`0.025quant`),
-        ", ",
-        prs(`0.975quant`),
-        ")"
-      ),
-    ) %>%
-    select(term,`Unadjusted`,`Adjusted1`,`Adjusted2`)
-# Applying function to each unique name
-results_combined <- reduce(results, full_join, by = "term") %>% 
-    mutate(
-      `Unadjusted` = ifelse(is.na(estimate.x), "", paste0(
-        prs(estimate.x),
-        " (",
-        prs(lower_ci.x),
-        ", ",
-        prs(upper_ci.x),
-        ")"
-      )),
-      `Adjusted1` = paste0(
-        prs(estimate.y),
-        " (",
-        prs(lower_ci.y),
-        ", ",
-        prs(upper_ci.y),
-        ")"
-      ),
-            `Adjusted2` = paste0(
-        prs(estimate),
-        " (",
-        prs(lower_ci),
-        ", ",
-        prs(upper_ci),
-        ")"
-      ),
-    ) %>%
-    select(term,`Unadjusted`,`Adjusted1`,`Adjusted2`)
-
-
-results_hyper_parameters_combined <- results_hyper_parameters_combined %>%
-  add_row(term = "Hyper Parameters",.before = -Inf)
-
-results_combined <- results_combined %>%
-  add_row(.,term = "Fixed Effects",.before = -Inf)
-
-
-
-result_tibbles <- bind_rows(results_combined,results_hyper_parameters_combined) %>% 
-    mutate( Unadjusted = str_remove_all(Unadjusted,"NA \\(|NA\\,|NA\\)"),
-           Adjusted1 = str_remove_all(Adjusted1,"NA \\(|NA\\,|NA\\)"),
-           Adjusted2 = str_remove_all(Adjusted2,"NA \\(|NA\\,|NA\\)")
-    )
-
-return(result_tibbles)
-}
-
- summarise_models_details(van_models_1$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
- 
- 
- 
- #009392,#72aaa1,#b1c7b3,#f1eac8,#e5b9ad,#d98994,#d0587e
- 
-vancouver_sf$re_all_adjusted <- van_models_1$models$Adjusted2$summary.random$ui[1:nrow(vancouver_sf), "mean"]
-
-
-ggplot(vancouver_sf) + geom_sf(aes(fill = re_all_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for All Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
- 
- 
-```
-
-#### Cyclists
-
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
- summarise_models_details(van_models_2$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-vancouver_sf$re_cyclists_adjusted <- van_models_2$models$Adjusted2$summary.random$ui[1:nrow(vancouver_sf), "mean"]
-
-
-ggplot(vancouver_sf) + geom_sf(aes(fill = re_cyclists_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for Cyclist - Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
- 
-```
-
-#### Pedestrians
-
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
- summarise_models_details(van_models_3$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-vancouver_sf$re_pedestrians_adjusted <- van_models_3$models$Adjusted2$summary.random$ui[1:nrow(vancouver_sf), "mean"]
-ggplot(vancouver_sf) + geom_sf(aes(fill = re_pedestrians_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for Pedestrian - Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
- 
-```
-
-### Victoria Model Details
-
-#### All
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
-
- summarise_models_details(victoria_models_1$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-victoria_sf$re_all_adjusted <- victoria_models_1$models$Adjusted2$summary.random$ui[1:nrow(victoria_sf), "mean"]
-
-ggplot(victoria_sf) + geom_sf(aes(fill = re_all_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for All Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
- 
-```
-
-#### Cyclists
-
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
- summarise_models_details(victoria_models_2$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-
-
-victoria_sf$re_cyclists_adjusted <- victoria_models_2$models$Adjusted2$summary.random$ui[1:nrow(victoria_sf), "mean"]
-ggplot(victoria_sf) + geom_sf(aes(fill = re_cyclists_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for Cyclist - Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
-```
-
-#### Pedestrians
-
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
- summarise_models_details(victoria_models_3$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-
-victoria_sf$re_pedestrians_adjusted <- victoria_models_3$models$Adjusted2$summary.random$ui[1:nrow(victoria_sf), "mean"]
-ggplot(victoria_sf) + geom_sf(aes(fill = re_pedestrians_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for Pedestrian - Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
-```
-
-### Central Island - Powell River Model Details
-
-#### All
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
-
- summarise_models_details(nanaimo_models_1$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-nanaimo_sf$re_all_adjusted <- nanaimo_models_1$models$Adjusted2$summary.random$ui[1:nrow(nanaimo_sf), "mean"]
-
-ggplot(nanaimo_sf) + geom_sf(aes(fill = re_all_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for All Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
- 
-```
-
-#### Cyclists
-
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
- summarise_models_details(nanaimo_models_2$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-nanaimo_sf$re_cyclists_adjusted <- nanaimo_models_2$models$Adjusted2$summary.random$ui[1:nrow(nanaimo_sf), "mean"]
-ggplot(nanaimo_sf) + geom_sf(aes(fill = re_cyclists_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for Cyclist - Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
-```
-
-#### Pedestrians
-
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
- summarise_models_details(nanaimo_models_3$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-
-nanaimo_sf$re_pedestrians_adjusted <- nanaimo_models_3$models$Adjusted2$summary.random$ui[1:nrow(nanaimo_sf), "mean"]
-ggplot(nanaimo_sf) + geom_sf(aes(fill = re_pedestrians_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for Pedestrian - Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
-```
-
-### Okanagan Model Details
-
-#### All
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
-
- summarise_models_details(okanagan_models_1$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-okanagan_sf$re_all_adjusted <- okanagan_models_1$models$Adjusted2$summary.random$ui[1:nrow(okanagan_sf), "mean"]
-
-ggplot(okanagan_sf) + geom_sf(aes(fill = re_all_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for All Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
- 
-```
-
-
-#### Cyclists
-
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
- summarise_models_details(okanagan_models_2$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-okanagan_sf$re_cyclists_adjusted <- okanagan_models_2$models$Adjusted2$summary.random$ui[1:nrow(okanagan_sf), "mean"]
-ggplot(okanagan_sf) + geom_sf(aes(fill = re_cyclists_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for Cyclist - Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
-```
-
-
-#### Pedestrians
-
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
- summarise_models_details(okanagan_models_3$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-
-okanagan_sf$re_pedestrians_adjusted <- okanagan_models_3$models$Adjusted2$summary.random$ui[1:nrow(okanagan_sf), "mean"]
-ggplot(okanagan_sf) + geom_sf(aes(fill = re_pedestrians_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for Pedestrian - Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
-```
-
-
-### Fraser Valley Model Details
-
-#### All
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
-
- summarise_models_details(fraser_valley_models_1$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-fraser_valley_sf$re_all_adjusted <- fraser_valley_models_1$models$Adjusted2$summary.random$ui[1:nrow(fraser_valley_sf), "mean"]
-
-ggplot(fraser_valley_sf) + geom_sf(aes(fill = re_all_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for All Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
- 
-```
-
-#### Cyclists
-
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
- summarise_models_details(fraser_valley_models_2$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-fraser_valley_sf$re_cyclists_adjusted <- fraser_valley_models_2$models$Adjusted2$summary.random$ui[1:nrow(fraser_valley_sf), "mean"]
-ggplot(fraser_valley_sf) + geom_sf(aes(fill = re_cyclists_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for Cyclist - Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
-```
-
-#### Pedestrians
-
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
- summarise_models_details(fraser_valley_models_3$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-
-fraser_valley_sf$re_pedestrians_adjusted <- fraser_valley_models_3$models$Adjusted2$summary.random$ui[1:nrow(fraser_valley_sf), "mean"]
-ggplot(fraser_valley_sf) + geom_sf(aes(fill = re_pedestrians_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for Pedestrian - Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
-```
-
-### North Central Model Details
-
-
-#### All
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
-
- summarise_models_details(north_central_models_1$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-north_central_sf$re_all_adjusted <- north_central_models_1$models$Adjusted2$summary.random$ui[1:nrow(north_central_sf), "mean"]
-
-ggplot(north_central_sf) + geom_sf(aes(fill = re_all_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for All Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
- 
-```
-
-
-#### Cyclists
-
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
-
-summarise_models_details(north_central_models_2$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-north_central_sf$re_cyclists_adjusted <- north_central_models_2$models$Adjusted2$summary.random$ui[1:nrow(north_central_sf), "mean"]
-ggplot(north_central_sf) + geom_sf(aes(fill = re_cyclists_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for Cyclist - Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
-```
-
-
-#### Pedestrians
-
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
- summarise_models_details(north_central_models_3$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-
-north_central_sf$re_pedestrians_adjusted <- north_central_models_3$models$Adjusted2$summary.random$ui[1:nrow(north_central_sf), "mean"]
-ggplot(north_central_sf) + geom_sf(aes(fill = re_pedestrians_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for Pedestrian - Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
-```
-
-
-### Kamloops-Salmon Arm
-
-
-#### All
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
-
- summarise_models_details(interior_models_1$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-interior_sf$re_all_adjusted <- interior_models_1$models$Adjusted2$summary.random$ui[1:nrow(interior_sf), "mean"]
-
-ggplot(interior_sf) + geom_sf(aes(fill = re_all_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for All Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
- 
-```
-
-
-#### Cyclists
-
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
- summarise_models_details(interior_models_2$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-interior_sf$re_cyclists_adjusted <- interior_models_2$models$Adjusted2$summary.random$ui[1:nrow(interior_sf), "mean"]
-ggplot(interior_sf) + geom_sf(aes(fill = re_cyclists_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for Cyclist - Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
-```
-
-
-#### Pedestrians
-
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
- summarise_models_details(interior_models_3$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-
-interior_sf$re_pedestrians_adjusted <- interior_models_3$models$Adjusted2$summary.random$ui[1:nrow(interior_sf), "mean"]
-ggplot(interior_sf) + geom_sf(aes(fill = re_pedestrians_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for Pedestrian - Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
-```
-
-### Southeast
-
-
-#### All
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
-
- summarise_models_details(southeast_models_1$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-southeast_sf$re_all_adjusted <- southeast_models_1$models$Adjusted2$summary.random$ui[1:nrow(southeast_sf), "mean"]
-
-ggplot(southeast_sf) + geom_sf(aes(fill = re_all_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for All Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
- 
-```
-
-
-#### Cyclists
-
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
- summarise_models_details(southeast_models_2$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-southeast_sf$re_cyclists_adjusted <- southeast_models_2$models$Adjusted2$summary.random$ui[1:nrow(southeast_sf), "mean"]
-ggplot(southeast_sf) + geom_sf(aes(fill = re_cyclists_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for Cyclist - Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
-```
-
-
-#### Pedestrians
-
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
- summarise_models_details(southeast_models_3$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-
-southeast_sf$re_pedestrians_adjusted <- southeast_models_3$models$Adjusted2$summary.random$ui[1:nrow(southeast_sf), "mean"]
-ggplot(southeast_sf) + geom_sf(aes(fill = re_pedestrians_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for Pedestrian - Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
-```
-
-### Northwest
-
-
-#### All
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
-
- summarise_models_details(northwest_models_1$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-northwest_sf$re_all_adjusted <- northwest_models_1$models$Adjusted2$summary.random$ui[1:nrow(northwest_sf), "mean"]
-
-ggplot(northwest_sf) + geom_sf(aes(fill = re_all_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for All Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
- 
-```
-
-
-#### Cyclists
-
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
- summarise_models_details(northwest_models_2$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-northwest_sf$re_cyclists_adjusted <- northwest_models_2$models$Adjusted2$summary.random$ui[1:nrow(northwest_sf), "mean"]
-ggplot(northwest_sf) + geom_sf(aes(fill = re_cyclists_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for Cyclist - Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
-```
-
-
-#### Pedestrians
-
-```{r, echo = FALSE, fig.width= 7.5, fig.height=10}
- summarise_models_details(northwest_models_3$models) %>% 
-   flextable() %>%
-      autofit() %>%
-      hline(c(1,8,9))
-
-
-
-northwest_sf$re_pedestrians_adjusted <- northwest_models_3$models$Adjusted2$summary.random$ui[1:nrow(northwest_sf), "mean"]
-ggplot(northwest_sf) + geom_sf(aes(fill = re_pedestrians_adjusted)) +
-  scale_fill_gradient2(
-    midpoint = 0,
-    low = "#009392",
-    mid = "#f1eac8",
-    high = "#d0587e"
-  ) +
-  theme_bw() +
-  theme_void(base_size = 11) +
-  theme(legend.position = "bottom", ) +
-  labs(title = "Posterior mean of the BYM2 random effect", subtitle = "Fully Adjusted Model for Pedestrian - Motor Vehicle Claims") +
-  coord_sf(crs = 26910) 
-```
-
-### Reproducibility receipt
+# Reproducibility receipt
 
 ```{r,	echo = FALSE, message = FALSE, warning = FALSE}
 
-rt <- tictoc::toc()
+rt <- tictoc::toc(quiet = TRUE)
 
-paste0("Total run time: ", rt$callback_msg)
+paste0("Total run time: ", round(rt$toc/60,2), " minutes")
 ## datetime
 Sys.time()
 
@@ -5729,7 +5507,7 @@ sessionInfo()
 <!-- - A CMA must have a total population of at least 100,000, based on data from the current Census of Population Program, of which 50,000 or more must live in the core based on adjusted data from the previous Census of Population Program.  -->
 <!-- - A CA must have a core population of at least 10,000 also based on data from the previous Census of Population Program. To be included in the CMA or CA, other adjacent municipalities must have a high degree of integration with the core, as measured by commuting flows derived from data on place of work from the previous Census Program. -->
 
-<!-- For each region we fit three models to each crash type which included an unadjusted model, a minimally adjusted model that includes the log of the total length of roads and fully adjusted model that includes the log of the total length of roads and several other road network and built environment characteristics that we considered proxies for differences in traffic exposure holding length of roads constant. We chose to use the log of the total length of roads as a co-variate instead of an offset because the relationship was estimated to be non-linear, areas with more total roads had proportionately fewer incidences of crashes. -->
+<!-- For each region we fit three models to each crash type which included an unadjusted model, a minimally adjusted model that includes the log of the total length of roads and Adjusted model that includes the log of the total length of roads and several other road network and built environment characteristics that we considered proxies for differences in traffic exposure holding length of roads constant. We chose to use the log of the total length of roads as a co-variate instead of an offset because the relationship was estimated to be non-linear, areas with more total roads had proportionately fewer incidences of crashes. -->
 
 <!-- # Results  -->
 
