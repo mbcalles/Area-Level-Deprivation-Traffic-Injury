@@ -1,7 +1,7 @@
 
-clip_linestring_by_poly <- function(linestring, clipping_polygon,clipping_polygon_buffer_size = 10, n_grid_cells = 100){
+clip_linestring_by_poly <- function(linestring, clipping_polygon,clipping_polygon_buffer_size = 10, n_grid_cells = 100,cap_style = "FLAT",join_style = "BEVEL"){
   
-  clipping_polygon_buffer <- st_buffer(clipping_polygon,dist=clipping_polygon_buffer_size)#buffer clipping polygon by amount
+  clipping_polygon_buffer <- st_buffer(clipping_polygon,dist=clipping_polygon_buffer_size,endCapStyle = cap_style,joinStyle = join_style)#buffer clipping polygon by amount
   polygon_ls <- st_cast(clipping_polygon_buffer,"MULTILINESTRING") %>% st_cast("LINESTRING") %>% st_geometry() #convert to linestring
   int_points <- st_intersection(polygon_ls,linestring) %>% #find intersection of road lines and centroid buffers
     st_cast("MULTIPOINT") %>%
