@@ -3,6 +3,7 @@
 .RData
 .Ruserdata
 .RDataTmp*
+.html
 *.docx
 Data/
 R/Archive/
