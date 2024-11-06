@@ -49,6 +49,30 @@ type <- #data dictionary
   st_read(dsn = paste0(wd, "/Data/dgtl_road_atlas.gdb"),
           layer = "TRANSPORT_LINE_TYPE_CODE")
 
+
+# type %>% 
+# filter(
+#   str_detect(DESCRIPTION, "arterial") |
+#     str_detect(DESCRIPTION, "collector") |
+#     str_detect(DESCRIPTION, "freeway") |
+#     str_detect(DESCRIPTION, "highway") |
+#     str_detect(DESCRIPTION, "local") |
+#     str_detect(DESCRIPTION, "ramp") |
+#     str_detect(DESCRIPTION, "strata")
+# )
+# 
+# type %>% 
+#   filter(!(
+#     str_detect(DESCRIPTION, "arterial") |
+#       str_detect(DESCRIPTION, "collector") |
+#       str_detect(DESCRIPTION, "freeway") |
+#       str_detect(DESCRIPTION, "highway") |
+#       str_detect(DESCRIPTION, "local") |
+#       str_detect(DESCRIPTION, "ramp") |
+#       str_detect(DESCRIPTION, "strata")
+#   )
+#   )
+
 dra_sub <- dra %>% # Subset road network by road types
   left_join(type, by = "TRANSPORT_LINE_TYPE_CODE") %>%
   filter(
@@ -60,6 +84,9 @@ dra_sub <- dra %>% # Subset road network by road types
       str_detect(DESCRIPTION, "ramp") |
       str_detect(DESCRIPTION, "strata")
   )
+
+st_write(dra_sub, dsn = paste0(wd, "/Processed Data/dra_subset.gpkg"))
+
 
 dra_highway <- # highway only
   dra_sub %>%
