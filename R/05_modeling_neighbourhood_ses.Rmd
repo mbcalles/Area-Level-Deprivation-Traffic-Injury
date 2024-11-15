@@ -260,21 +260,178 @@ cma_da <- cma_da %>%
 #### Define Spatial Neighrbourhoods
 
 cma_sp <- as(cma_da, "Spatial")
-cma_sp$ui <- 1:nrow(cma_sp@data)
 
 coords <- coordinates(cma_sp)
 cma_nb <- poly2nb(cma_sp, queen = TRUE)
 
 cma_nb
 
-#assign nearest neighbour for no links
-cma_nb <- assign_nearest_neighbors(cma_nb,cma_sp)
+
+dra <- #road network polyline
+  st_read(dsn = paste0(getwd(), "/Processed Data/dra_subset.gpkg"))
+
+
+bridges <- dra %>% filter(TRANSPORT_LINE_STRUCTURE_CODE=="B"|TRANSPORT_LINE_STRUCTURE_CODE=="T")
+
+bridges_sub <- st_difference(bridges, bc_boundary)
+
+library(mapview)
+mapview(bridges_sub) + mapview(cma_da)
+
+
+bridge_da_intersect <- cma_da %>%
+  mutate(index = row_number()) %>%
+  st_join(st_buffer(bridges_sub,1), join = st_intersects) %>% 
+    filter(!is.na(TRANSPORT_LINE_ID))
+
+mapview(cma_da) + mapview(bridge_da_intersect,color="red") + mapview(bridges_sub) 
+
+
+
+bridge_neighbours <- bridge_da_intersect %>% 
+  group_by(STRUCTURED_NAME_1) %>% 
+  summarise(
+    index = paste0(sort(unique(index)), collapse = "-"),
+    .groups = "drop"
+  ) %>%
+  separate_wider_delim(
+    cols = index,
+    delim = "-",
+    names_sep = "_",
+    too_few = "align_start",
+    too_many = "drop"
+  ) %>% 
+  filter(!is.na(index_2)) # remove bridges that connect a neighbourhood to itself
+
+bn_l <- bridge_neighbours %>% 
+  pivot_longer(cols = starts_with("index"),values_to = "index") %>% 
+  filter(!is.na(index)) %>% 
+  split(.$STRUCTURED_NAME_1) %>% 
+  map(~pull(.x,index)) %>% 
+  map(~as.integer(.x))
+
+for(i in 1:length(bn_l)){
+  
+for(j in 1:length(bn_l[[i]]))
+  
+  index <- bn_l[[i]][j]
+  nbs_add <-  bn_l[[i]][-j]
+
+    cma_nb <- addlinks1(cma_nb,from = index, to = nbs_add)
+
+  
+}
+
+###### Manual Connections
 cma_nb
 
-plot(cma_sp, border = grey(0.5))
-plot(cma_nb,
-     coords = coords,
-     add = TRUE, pch = 16, lwd = 2)
+### Bowen Island - Horseshoe bay 
+
+cma_nb <- addlinks1(cma_nb,from = 625,to = 3570)
+
+### Horseshoe Bay - Lions Bay
+cma_nb <- addlinks1(cma_nb,from = 625,to = 3483)
+
+### Courtenay  - Denman
+cma_nb <- addlinks1(cma_nb,from = 5166,to = 5168)
+
+
+### Courtenay  - Denman
+cma_nb <- addlinks1(cma_nb,from = 5168,to = 5170)
+
+summary(cma_nb)
+
+updated_components <- spdep::n.comp.nb(cma_nb)
+
+cma_da$disconnected_region <- factor(as.character(updated_components$comp.id),levels = as.character(c(seq(1:updated_components$nc))))
+
+# colors_16 <- c(
+#     "#e41a1c",  # red
+#     "#377eb8",  # blue
+#     "#4daf4a",  # green
+#     "#984ea3",  # purple
+#     "#ff7f00",  # orange
+#     "#ffff33",  # yellow
+#     "#a65628",  # brown
+#     "#f781bf",  # pink
+#     "#999999",  # grey
+#     "#66c2a5",  # mint
+#     "#fc8d62",  # salmon
+#     "#8da0cb",  # light blue
+#     "#e78ac3",  # rose
+#     "#a6d854",  # lime
+#     "#ffd92f",  # gold
+#     "#e5c494"  # tan
+# 
+# )
+# 
+# mapview::mapview(cma_da, 
+#                 zcol = "disconnected_region",
+#                 col.regions = colors_16)
+
+# cma_da %>%
+#   st_drop_geometry() %>%
+#   group_by(disconnected_region) %>%
+#   summarise(csdname = paste0(unique(csdname), collapse = "-")) %>%
+#   print(n = 100) %>%
+#   mutate(region = case_when(disconnected_region == 1 ~ "Cranbrook",
+#                               disconnected_region == 2 ~ "Nelson",
+#                               disconnected_region == 3 ~ "Trail",
+#                               disconnected_region == 4 ~ "Okanagan",
+#                               disconnected_region == 5 ~ "Vancouver-Fraser Valley",
+#                               disconnected_region == 6 ~ "Victoria",
+#                               disconnected_region == 7 ~ "Central Island",
+#                               disconnected_region == 8 ~ "Parksville",
+#                               disconnected_region == 9 ~ "Campbell River",
+#                               disconnected_region == 10 ~ "Powell River",
+#                               disconnected_region == 11 ~ "Squamish",
+#                               disconnected_region == 12 ~ "Kamloops",
+#                               disconnected_region == 13 ~ "Salmon Arm",
+#                               disconnected_region == 14 ~ "Northeast",
+#                               disconnected_region == 15 ~ "Prince Rupert",
+#                               disconnected_region == 16 ~ "Terrace"
+# 
+#                               )
+#          ) %>% View()
+
+
+
+cma_da <- cma_da %>%
+  mutate(region = case_when(disconnected_region == 1 ~ "Cranbrook",
+                              disconnected_region == 2 ~ "Nelson",
+                              disconnected_region == 3 ~ "Trail",
+                              disconnected_region == 4 ~ "Okanagan",
+                              disconnected_region == 5 ~ "Vancouver-Fraser Valley",
+                              disconnected_region == 6 ~ "Victoria",
+                              disconnected_region == 7 ~ "Central Island",
+                              disconnected_region == 8 ~ "Parksville",
+                              disconnected_region == 9 ~ "Campbell River",
+                              disconnected_region == 10 ~ "Powell River",
+                              disconnected_region == 11 ~ "Squamish",
+                              disconnected_region == 12 ~ "Kamloops",
+                              disconnected_region == 13 ~ "Salmon Arm",
+                              disconnected_region == 14 ~ "Northeast",
+                              disconnected_region == 15 ~ "Prince Rupert",
+                              disconnected_region == 16 ~ "Terrace"
+                              )
+         )
+
+region_levels <- cma_da %>% 
+  st_drop_geometry() %>% 
+  group_by(region) %>% 
+  summarise(pop = sum(population)) %>% 
+  arrange(desc(pop)) %>% 
+  pull(region)
+
+cma_da <- cma_da %>% 
+  mutate(region = factor(region,region_levels))
+
+
+cma_sp <- as(cma_da, "Spatial")
+cma_sp$ui <- 1:nrow(cma_sp@data)
+
+
+
 ```
 
 ### Spatial Dependency in each crash type
@@ -296,47 +453,115 @@ pd_cc_mi
 
 ### BYM2 Models
 
+
+### Statistical Methods
+
+To model casualty claims across British Columbia, we employed a spatial Poisson regression model with a BYM2 (Besag-York-Mollié) component to account for spatial autocorrelation. The model was implemented using R-INLA (Integrated Nested Laplace Approximation) at the census dissemination area (DA) level (n = 6,225).
+
+Let $Y_i$ represent the number of casualty claims in DA $i$. The model is specified as:
+
+$Y_i \sim \text{Poisson}(\mu_i)$
+
+$\log(\mu_i) = \eta_i$
+
+where:
+
+$\eta_i = \beta_0 + \beta_1\text{vandix}_i + \sum_{k=1}^8\beta_{2k}\text{region}_{ki} + \sum_{k=1}^8\beta_{3k}(\text{vandix}_i \times \text{region}_{ki}) + \mathbf{X}_i\boldsymbol{\gamma} + u_i$
+
+The model includes 16 regional indicators ($\text{region}_{ki}$) with Vancouver-Squamish serving as the reference category. The coefficient $\beta_{3k}$ represents the region-specific effect of the Vancouver Area Disadvantage Index (VanDIX), capturing how the relationship between disadvantage and casualty claims varies by region.
+
+The spatial random effects component $u_i$ follows the BYM2 parameterization:
+
+$u_i = \frac{1}{\sqrt{\tau_u}}(\sqrt{1-\phi}v_i + \sqrt{\phi}w_i)$
+
+where $v_i$ is an unstructured (iid) random effect and $w_i$ is a structured spatial effect. The spatial neighborhood structure was defined using queen contiguity, where areas sharing at least one boundary point are considered neighbors.
+
+For the hyperparameters, we specified penalized complexity (PC) priors:
+- For the precision parameter $\tau_u$: PC prior with parameters (1, 0.001)
+- For the mixing parameter $\phi$: PC prior with parameters (0.5, 0.5)
+
+To handle disconnected components in the spatial structure, we employed sum-to-zero constraints for each region separately, using the adjust.for.con.comp = TRUE option in INLA. This approach assumes a common intercept across disconnected regions, with spatial random effects interpreted as area-specific deviations from the overall risk within each region. The model was scaled with respect to each subgraph to ensure comparability of random effects across regions.
+
+Model estimation was performed using the R-INLA package, with model fit assessed using the Deviance Information Criterion (DIC) and Watanabe-Akaike Information Criterion (WAIC).
+
+
 ```{r}
 
 vandix_irr <- function(m.samp) {
 
-
 fun <- function() return (exp(vandix_z))
 van <- inla.posterior.sample.eval(fun, m.samp)
 
-fun <- function() return (exp(vandix_z + `vandix_z:region_nameVictoria`))
+fun <- function() return (exp(vandix_z + `vandix_z:regionVictoria`))
 vic <- inla.posterior.sample.eval(fun, m.samp)
 
+fun <- function() return (exp(vandix_z + `vandix_z:regionOkanagan`))
+ok <- inla.posterior.sample.eval(fun, m.samp)
 
-fun <- function() return (exp(vandix_z + `vandix_z:region_nameCentral Island-Powell River`))
-cpr <- inla.posterior.sample.eval(fun, m.samp)
+fun <- function() return (exp(vandix_z + `vandix_z:regionCentral Island`))
+ci <- inla.posterior.sample.eval(fun, m.samp)
 
-fun <- function() return (exp(vandix_z + `vandix_z:region_nameOkanagan`))
-okanagan <- inla.posterior.sample.eval(fun, m.samp)
+fun <- function() return (exp(vandix_z + `vandix_z:regionNortheast`))
+ne <- inla.posterior.sample.eval(fun, m.samp)
 
-fun <- function() return (exp(vandix_z + `vandix_z:region_nameFraser Valley`))
-fraservalley <- inla.posterior.sample.eval(fun, m.samp)
+fun <- function() return (exp(vandix_z + `vandix_z:regionKamloops`))
+ka <- inla.posterior.sample.eval(fun, m.samp)
 
-fun <- function() return (exp(vandix_z + `vandix_z:region_nameNorth Central`))
-northcentral <- inla.posterior.sample.eval(fun, m.samp)
+fun <- function() return (exp(vandix_z + `vandix_z:regionCampbell River`))
+cr <- inla.posterior.sample.eval(fun, m.samp)
 
-fun <- function() return (exp(vandix_z + `vandix_z:region_nameKamloops-Salmon Arm`))
-kamloops <- inla.posterior.sample.eval(fun, m.samp)
+fun <- function() return (exp(vandix_z + `vandix_z:regionParksville`))
+pa <- inla.posterior.sample.eval(fun, m.samp)
 
-fun <- function() return (exp(vandix_z + `vandix_z:region_nameSoutheast`))
-se <- inla.posterior.sample.eval(fun, m.samp)
+fun <- function() return (exp(vandix_z + `vandix_z:regionCranbrook`))
+cb <- inla.posterior.sample.eval(fun, m.samp)
 
-fun <- function() return (exp(vandix_z + `vandix_z:region_nameNorthwest`))
-nw <- inla.posterior.sample.eval(fun, m.samp)
+fun <- function() return (exp(vandix_z + `vandix_z:regionSquamish`))
+sq <- inla.posterior.sample.eval(fun, m.samp)
 
-vandix_irr_by_region <- tibble(region_name = regions$region_name,
-       vandix_irr_post = list(van,vic,cpr,okanagan,fraservalley,northcentral,kamloops,se,nw)
-       ) %>% 
-  mutate(irr_mean = map_dbl(vandix_irr_post, ~mean(.x)),
-         irr_low  = map_dbl(vandix_irr_post, ~quantile(.x,probs = c(0.025))),
-         irr_high  = map_dbl(vandix_irr_post, ~quantile(.x,probs = c(0.975)))
-         
-         )
+fun <- function() return (exp(vandix_z + `vandix_z:regionTerrace`))
+te <- inla.posterior.sample.eval(fun, m.samp)
+
+fun <- function() return (exp(vandix_z + `vandix_z:regionSalmon Arm`))
+sa <- inla.posterior.sample.eval(fun, m.samp)
+
+fun <- function() return (exp(vandix_z + `vandix_z:regionNelson`))
+ne  <- inla.posterior.sample.eval(fun, m.samp)
+
+fun <- function() return (exp(vandix_z + `vandix_z:regionPowell River`))
+pri  <- inla.posterior.sample.eval(fun, m.samp)
+
+fun <- function() return (exp(vandix_z + `vandix_z:regionTrail`))
+tr  <- inla.posterior.sample.eval(fun, m.samp)
+
+fun <- function() return (exp(vandix_z + `vandix_z:regionPrince Rupert`))
+pr  <- inla.posterior.sample.eval(fun, m.samp)
+
+
+vandix_irr_by_region <- tibble(region = region_levels,
+                               vandix_irr_post = list(van, 
+                                                      vic,
+                                                      ok,
+                                                      ci,
+                                                      ne,
+                                                      ka,
+                                                      cr,
+                                                      pa,
+                                                      cb,
+                                                      sq,
+                                                      te,
+                                                      sa,
+                                                      ne,
+                                                      pri,
+                                                      tr,
+                                                      pr
+                                                      )) %>%
+  mutate(
+    irr_mean = map_dbl(vandix_irr_post, ~ mean(.x)),
+    irr_low  = map_dbl(vandix_irr_post, ~ quantile(.x, probs = c(0.025))),
+    irr_high  = map_dbl(vandix_irr_post, ~ quantile(.x, probs = c(0.975)))
+    
+  )
 
 return(vandix_irr_by_region)
 
@@ -396,8 +621,22 @@ rename_columns <- function(cols, mapping) {
 names(results_combined) <- rename_columns(names(results_combined), replacement_mapping)
 
 
-results_hyper_parameters <- lapply(inla_model_list, function(x) x$summary.hyper %>% rownames_to_column(var = "term"))
-# Identifying unique names of the tibbles in the list
+results_hyper_parameters <- lapply(inla_model_list, function(x) {
+  if (!is.null(x$summary.hyper) && nrow(x$summary.hyper) > 0) {
+    x$summary.hyper %>% rownames_to_column(var = "term")
+  } else {
+    # Create a single row data frame with NA values
+    tibble(
+      term = NA,
+      mean = NA,
+      sd = NA,
+      `0.025quant` = NA,
+      `0.5quant` = NA,
+      `0.975quant` = NA,
+      mode = NA
+    )
+  }
+})# Identifying unique names of the tibbles in the list
 
 results_hyper_parameters_combined <- reduce(results_hyper_parameters, full_join, by = "term") 
 # Applying function to each unique name
@@ -489,144 +728,158 @@ prior <- list(
 
 ############## Poisson models
 
-#### Unadjusted model - no spatial random effect
 
-f0 <-  n_casualty_claims ~ vandix_z*region_name + f(ui, model = 'iid')
+#### Unadjusted model - no random effects
 
-m0 <- inla(
-  f0,
+f1_all <-  n_casualty_claims ~ vandix_z * region
+
+m1_all <- inla(
+  f1_all,
   data = cma_sp@data,
   family = "poisson",
-  control.compute = list(
-    dic = TRUE,
-    waic = TRUE,
-    config = TRUE
-  ),
+  control.compute = list(dic = TRUE, waic = TRUE, config = TRUE),
+  control.predictor = list(compute = TRUE),
+  verbose = FALSE
+)
+
+#### Unadjusted model - unstructured random effect
+
+f2_all <-  n_casualty_claims ~ vandix_z * region + f(ui, model = 'iid')
+
+m2_all <- inla(
+  f2_all,
+  data = cma_sp@data,
+  family = "poisson",
+  control.compute = list(dic = TRUE, waic = TRUE, config = TRUE),
   control.predictor = list(compute = TRUE),
   verbose = FALSE
 )
 
 ##### Unadjusted model - spatial random effect
 
+f3_all <-  n_casualty_claims ~ vandix_z * region + f(
+  ui,
+  model = 'bym2',
+  graph = cma_adj,
+  hyper = prior,
+  adjust.for.con.comp = TRUE,
+  constr = TRUE,
+  scale.model = TRUE
+)
 
-f1 <-  n_casualty_claims ~ vandix_z*region_name + f(ui, model = 'bym2', graph = cma_adj, hyper = prior, adjust.for.con.comp = TRUE, constr = TRUE, scale.model = TRUE)
-
-    
 #adjust.for.con.comp = TRUE, scale.model = TRUE:  assigns one intercept to each region in addition to using a sum-to-zero constraint for each connected region. By adding an intercept for each region, we infer that the baseline prevalence is different in the disconnected regions.
 
-
-m1 <- inla(f1,
-           data =  cma_sp@data,
-           family = "poisson",
-           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
-           control.predictor = list(compute = TRUE),
-           verbose = FALSE)
-
-#####  Minimally Adjusted model - spatial random effect
-
-f2 <-  n_casualty_claims ~ vandix_z*region_name + ln_roads_km_c + f(ui, model = 'bym2', graph = cma_adj, hyper = prior, adjust.for.con.comp = TRUE, constr = TRUE, scale.model = TRUE)
-
-m2 <- inla(f2,
-           data =  cma_sp@data,
-           family = "poisson",
-           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
-           control.predictor = list(compute = TRUE),
-           verbose = FALSE)
-
-
-#####  Adjusted model - spatial random effect
-
-f3 <-  n_casualty_claims ~ vandix_z*region_name + ln_roads_km_c +  roads_prop_highway_arterial_z +  bike_infra_cat + population_100_c + number_intersections_10_c  + f(ui, model = 'bym2', graph = cma_adj, hyper = prior, adjust.for.con.comp = TRUE, constr = TRUE, scale.model = TRUE)
-
-m3 <- inla(f3,
-           data =  cma_sp@data,
-           family = "poisson",
-           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
-           control.predictor = list(compute = TRUE),
-           verbose = FALSE)
-
-
+m3_all <- inla(
+  f3_all,
+  data =  cma_sp@data,
+  family = "poisson",
+  control.compute = list(dic = TRUE, waic = TRUE, config = TRUE),
+  control.predictor = list(compute = TRUE),
+  verbose = FALSE
+)
 
 ############## ZIP models
 
-#### Unadjusted model - no spatial random effect
+#### Unadjusted model - no random effects
 
-m0_zip <- inla(
-  f0,
+m1_all_zip <- inla(
+  f1_all,
   data = cma_sp@data,
   family = "zeroinflatedpoisson1",
-  control.compute = list(
-    dic = TRUE,
-    waic = TRUE,
-    config = TRUE
-  ),
+  control.compute = list(dic = TRUE, waic = TRUE, config = TRUE),
   control.predictor = list(compute = TRUE),
   verbose = FALSE
 )
 
 
+
+#### Unadjusted model - unstructured random effect
+
+m2_all_zip <- inla(
+  f2_all,
+  data = cma_sp@data,
+  family = "zeroinflatedpoisson1",
+  control.compute = list(dic = TRUE, waic = TRUE, config = TRUE),
+  control.predictor = list(compute = TRUE),
+  verbose = FALSE
+)
+
 ##### Unadjusted model - spatial random effect
 
-m1_zip <- inla(f1,
-           data =  cma_sp@data,
-           family = "zeroinflatedpoisson1",
-           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
-           control.predictor = list(compute = TRUE),
-           verbose = FALSE)
+#adjust.for.con.comp = TRUE, scale.model = TRUE:  assigns one intercept to each region in addition to using a sum-to-zero constraint for each connected region. By adding an intercept for each region, we infer that the baseline prevalence is different in the disconnected regions.
 
 
-#####  Minimally Adjusted model - spatial random effect
+m3_all_zip <- inla(
+  f3_all,
+  data =  cma_sp@data,
+  family = "zeroinflatedpoisson1",
+  control.compute = list(dic = TRUE, waic = TRUE, config = TRUE),
+  control.predictor = list(compute = TRUE),
+  verbose = FALSE
+)
 
-m2_zip <- inla(f2,
-           data =  cma_sp@data,
-           family = "zeroinflatedpoisson1",
-           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
-           control.predictor = list(compute = TRUE),
-           verbose = FALSE)
-
-
-#####  Adjusted model - spatial random effect
-
-m3_zip <- inla(f3,
-           data =  cma_sp@data,
-           family = "zeroinflatedpoisson1",
-           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
-           control.predictor = list(compute = TRUE),
-           verbose = FALSE)
 
 
 ####### Model Comparisons
 
 
-model_list_all <- list(m0,m0_zip,m1,m1_zip,m2,m2_zip,m3,m3_zip)
-model_names <- c("Unadjusted Poisson - Non Spatial",
-                      "Unadjusted ZIP - Non Spatial",
-                      "Unadjusted Poisson - Spatial",
-                      "Unadjusted ZIP - Spatial",
-                      "Minimally Adjusted Poisson - Spatial",
-                      "Minimally Adjusted ZIP - Spatial",
-                      "Adjusted Poisson - Spatial",
-                      "Adjusted ZIP - Spatial"
+model_list_all <- list(m1_all,m1_all_zip,m2_all,m2_all_zip,m3_all, m3_all_zip)
+model_names <- c("Poisson",
+                 "ZI Poisson",
+                 "Poisson - Unstructured RE",
+                 "ZI Poisson - Unstructured RE",
+                 "Poisson - Spatial + Unstructured RE",
+                 "ZIPoisson  - Spatial + Unstructured RE"
                       )
+
+
+
+
 
 all_crashes_full_model_details <- summarise_models_details(inla_model_list = model_list_all,inla_model_names = model_names )
 
 
 all_crashes_full_model_details %>%  
-  mutate(across(where(is.numeric), function(x) round(x, digits = 3))) %>% 
-  select(-contains("mode"),-contains("0.5quant"),-contains("kld"),-contains("sd")) %>% 
-   flextable()
+  filter(str_detect(term,"WAIC|DIC")) %>% 
+  select(term,contains("mean")) %>% 
+  pivot_longer(cols = contains("Poisson")) %>% 
+  pivot_wider(id_cols = name,names_from = term,values_from = value) %>% 
+  arrange(WAIC)
+
+
+#Best fitting model is bym2
+
+#######  Adjusted model - 
+
+f4_all <-  n_casualty_claims ~ vandix_z*region + ln_roads_km_c + f(ui, model = 'bym2', graph = cma_adj, hyper = prior, adjust.for.con.comp = TRUE, constr = TRUE, scale.model = TRUE)
+
+m4_all <- inla(f4_all,
+           data =  cma_sp@data,
+           family = "poisson",
+           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
+           control.predictor = list(compute = TRUE),
+           verbose = FALSE)
+
+
+#####  Adjusted model - spatial random effect
+
+f5_all <-  n_casualty_claims ~ vandix_z*region + ln_roads_km_c +  roads_prop_highway_arterial_z +  bike_infra_cat + population_100_c + number_intersections_10_c  + f(ui, model = 'bym2', graph = cma_adj, hyper = prior, adjust.for.con.comp = TRUE, constr = TRUE, scale.model = TRUE)
+
+m5_all <- inla(f5_all,
+           data =  cma_sp@data,
+           family = "poisson",
+           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
+           control.predictor = list(compute = TRUE),
+           verbose = FALSE)
 
 ######### Region Specific IRRs from Posterior Distribution of Vandix + Region Interaction
 
-### Poisson better fit than zero inflated
-all_vandix_irr_m0_sample <- inla.posterior.sample(1000, m0)
-all_vandix_irr_m1_sample <- inla.posterior.sample(1000, m1)
-all_vandix_irr_m2_sample <- inla.posterior.sample(1000, m2)
-all_vandix_irr_m3_sample <- inla.posterior.sample(1000, m3)
 
+all_vandix_irr_unadjusted <- inla.posterior.sample(1000, m3_all)
+all_vandix_irr_minimally_adjusted <- inla.posterior.sample(1000, m4_all)
+all_vandix_irr_adjusted <- inla.posterior.sample(1000, m5_all)
 
-m0_vandix_irr <- vandix_irr(all_vandix_irr_m0_sample) %>%
+all_vandix_irr_unadjusted <- vandix_irr(all_vandix_irr_unadjusted) %>% 
   mutate(`IRR (95% CI)` = paste0(
     signif(irr_mean, 3),
     " (",
@@ -635,8 +888,7 @@ m0_vandix_irr <- vandix_irr(all_vandix_irr_m0_sample) %>%
     signif(irr_high, 3),
     ")"
   ))
-
-m1_vandix_irr <- vandix_irr(all_vandix_irr_m1_sample) %>%
+all_vandix_irr_minimally_adjusted <- vandix_irr(all_vandix_irr_minimally_adjusted)%>%
   mutate(`IRR (95% CI)` = paste0(
     signif(irr_mean, 3),
     " (",
@@ -645,18 +897,7 @@ m1_vandix_irr <- vandix_irr(all_vandix_irr_m1_sample) %>%
     signif(irr_high, 3),
     ")"
   ))
-
-m2_vandix_irr <- vandix_irr(all_vandix_irr_m2_sample) %>%
-  mutate(`IRR (95% CI)` = paste0(
-    signif(irr_mean, 3),
-    " (",
-    signif(irr_low, 3),
-    ", ",
-    signif(irr_high, 3),
-    ")"
-  ))
-
-m3_vandix_irr <- vandix_irr(all_vandix_irr_m3_sample) %>%
+all_vandix_irr_adjusted <- vandix_irr(all_vandix_irr_adjusted)%>%
   mutate(`IRR (95% CI)` = paste0(
     signif(irr_mean, 3),
     " (",
@@ -667,25 +908,23 @@ m3_vandix_irr <- vandix_irr(all_vandix_irr_m3_sample) %>%
   ))
 
 
-vandix_irr_all_crashes_models <- left_join(m0_vandix_irr,m1_vandix_irr,by="region_name") %>% 
-  left_join(m2_vandix_irr,by="region_name") %>% 
-  left_join(m3_vandix_irr,by="region_name") %>% 
+vandix_irr_all_crashes_models <- left_join(all_vandix_irr_unadjusted,all_vandix_irr_minimally_adjusted,by="region") %>% 
+  left_join(all_vandix_irr_adjusted,by="region") %>% 
   mutate(Term = "VanDIX (SD)") %>% 
-  select(region_name,Term,contains("IRR (95% CI)")) %>% 
+  select(Term,region,contains("IRR (95% CI)")) %>% 
   flextable() %>%
-  add_header_row( values = c("","Incidence Rate Ratio (95% Credible Interval)"),colwidths = c(2,4)) %>% 
-    set_header_labels(values = c("Region","Term","Unadjusted Non-Spatial","Unadjusted Spatial","Minimally Adjusted Spatial","Adjusted Spatial")) %>% 
+  add_header_row( values = c("","Incidence Rate Ratio (95% Credible Interval)"),colwidths = c(2,3)) %>% 
+    set_header_labels(values = c("Term","Region","Unadjusted","Minimally Adjusted","Adjusted")) %>% 
     footnote(
       i = c(2),
-      j = c(3, 4, 5, 6),
+      j = c(3, 4, 5),
       value = as_paragraph(
-        c("Poisson model fit with idd random effect at dissemination area level",
-          "Poisson model fit with idd and spatial random effect at dissemination area level",
+        c("Poisson model fit with idd and spatial random effect at dissemination area level",
           "Poisson model fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of road lanes",
           "Poisson model fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of road lanes; (ii) proportion of lanes classified as highway or arterial; (iii) number of intersections; (iv) presence of bicycling infrastructure; (v) total population"
         )
       ),
-      ref_symbols = c("a", "b", "c", "d"),
+      ref_symbols = c("a", "b", "c"),
       part = "header",
       inline = FALSE
     ) %>%
@@ -693,12 +932,14 @@ vandix_irr_all_crashes_models <- left_join(m0_vandix_irr,m1_vandix_irr,by="regio
   theme_booktabs() %>%
   set_table_properties(layout = "autofit") %>%
   valign(valign = "bottom", part = "header") %>%
-    set_caption("Table 3. Incidence Rate Ratios (IRR) with 95% Credible Intervals for motor vehicle crashes in relation to a standard deviation increase in deprivation, measured by the Vancouver Area Deprivation Index (VanDIX). Results are shown for different Poisson regression models: Unadjusted Non-Spatial, Unadjusted Spatial, Minimally Adjusted Spatial, and Adjusted Spatial across various regions in the province.")
+    set_caption("Table 4. Incidence Rate Ratios (IRR) with 95% Credible Intervals for motor vehicle crashes in relation to a standard deviation increase in deprivation, measured by the Vancouver Area Deprivation Index (VanDIX). Results are shown for different statistical models including unadjusted, minimally adjusted and adjusted.")
 
 
 ################################################################                
-################ Cyclist
-################################################################      
+################ Cyclist Crashes
+################################################################ 
+
+
 
 prior <- list(
   prec = list(
@@ -712,139 +953,152 @@ prior <- list(
 
 ############## Poisson models
 
-#### Unadjusted model - no spatial random effect
 
-f0 <-  n_cyclist_casualty_claims ~ vandix_z*region_name + f(ui, model = 'iid')
+#### Unadjusted model - no random effects
 
-m0_c <- inla(
-  f0,
+f1_cyclist <-  n_cyclist_casualty_claims ~ vandix_z * region
+
+m1_cyclist <- inla(
+  f1_cyclist,
   data = cma_sp@data,
   family = "poisson",
-  control.compute = list(
-    dic = TRUE,
-    waic = TRUE,
-    config = TRUE
-  ),
+  control.compute = list(dic = TRUE, waic = TRUE, config = TRUE),
+  control.predictor = list(compute = TRUE),
+  verbose = FALSE
+)
+
+#### Unadjusted model - unstructured random effect
+
+f2_cyclist <-  n_cyclist_casualty_claims ~ vandix_z * region + f(ui, model = 'iid')
+
+m2_cyclist <- inla(
+  f2_cyclist,
+  data = cma_sp@data,
+  family = "poisson",
+  control.compute = list(dic = TRUE, waic = TRUE, config = TRUE),
   control.predictor = list(compute = TRUE),
   verbose = FALSE
 )
 
 ##### Unadjusted model - spatial random effect
 
+f3_cyclist <-  n_cyclist_casualty_claims ~ vandix_z * region + f(
+  ui,
+  model = 'bym2',
+  graph = cma_adj,
+  hyper = prior,
+  adjust.for.con.comp = TRUE,
+  constr = TRUE,
+  scale.model = TRUE
+)
 
-f1 <-  n_cyclist_casualty_claims ~ vandix_z*region_name + f(ui, model = 'bym2', graph = cma_adj, hyper = prior, adjust.for.con.comp = TRUE, constr = TRUE, scale.model = TRUE)
+#adjust.for.con.comp = TRUE, scale.model = TRUE:  assigns one intercept to each region in addition to using a sum-to-zero constraint for each connected region. By adding an intercept for each region, we infer that the baseline prevalence is different in the disconnected regions.
 
-m1_c <- inla(f1,
-           data =  cma_sp@data,
-           family = "poisson",
-           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
-           control.predictor = list(compute = TRUE),
-           verbose = FALSE)
-
-#####  Minimally Adjusted model - spatial random effect
-
-f2 <-  n_cyclist_casualty_claims ~ vandix_z*region_name + ln_roads_km_c + f(ui, model = 'bym2', graph = cma_adj, hyper = prior, adjust.for.con.comp = TRUE, constr = TRUE, scale.model = TRUE)
-
-m2_c <- inla(f2,
-           data =  cma_sp@data,
-           family = "poisson",
-           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
-           control.predictor = list(compute = TRUE),
-           verbose = FALSE)
-
-
-#####  Adjusted model - spatial random effect
-
-f3 <-  n_cyclist_casualty_claims ~ vandix_z*region_name + ln_roads_km_c +  roads_prop_highway_arterial_z + bike_infra_cat + population_100_c + number_intersections_10_c + f(ui, model = 'bym2', graph = cma_adj, hyper = prior, adjust.for.con.comp = TRUE, constr = TRUE, scale.model = TRUE)
-
-m3_c <- inla(f3,
-           data =  cma_sp@data,
-           family = "poisson",
-           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
-           control.predictor = list(compute = TRUE),
-           verbose = FALSE)
-
-
+m3_cyclist <- inla(
+  f3_cyclist,
+  data =  cma_sp@data,
+  family = "poisson",
+  control.compute = list(dic = TRUE, waic = TRUE, config = TRUE),
+  control.predictor = list(compute = TRUE),
+  verbose = FALSE
+)
 
 ############## ZIP models
 
-#### Unadjusted model - no spatial random effect
+#### Unadjusted model - no random effects
 
-m0_zip_c <- inla(
-  f0,
+m1_cyclist_zip <- inla(
+  f1_cyclist,
   data = cma_sp@data,
   family = "zeroinflatedpoisson1",
-  control.compute = list(
-    dic = TRUE,
-    waic = TRUE,
-    config = TRUE
-  ),
+  control.compute = list(dic = TRUE, waic = TRUE, config = TRUE),
   control.predictor = list(compute = TRUE),
   verbose = FALSE
 )
 
 
+
+#### Unadjusted model - unstructured random effect
+
+m2_cyclist_zip <- inla(
+  f2_cyclist,
+  data = cma_sp@data,
+  family = "zeroinflatedpoisson1",
+  control.compute = list(dic = TRUE, waic = TRUE, config = TRUE),
+  control.predictor = list(compute = TRUE),
+  verbose = FALSE
+)
+
 ##### Unadjusted model - spatial random effect
 
-m1_zip_c <- inla(f1,
-           data =  cma_sp@data,
-           family = "zeroinflatedpoisson1",
-           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
-           control.predictor = list(compute = TRUE),
-           verbose = FALSE)
+#adjust.for.con.comp = TRUE, scale.model = TRUE:  assigns one intercept to each region in addition to using a sum-to-zero constraint for each connected region. By adding an intercept for each region, we infer that the baseline prevalence is different in the disconnected regions.
 
 
-#####  Minimally Adjusted model - spatial random effect
+m3_cyclist_zip <- inla(
+  f3_cyclist,
+  data =  cma_sp@data,
+  family = "zeroinflatedpoisson1",
+  control.compute = list(dic = TRUE, waic = TRUE, config = TRUE),
+  control.predictor = list(compute = TRUE),
+  verbose = FALSE
+)
 
-m2_zip_c <- inla(f2,
-           data =  cma_sp@data,
-           family = "zeroinflatedpoisson1",
-           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
-           control.predictor = list(compute = TRUE),
-           verbose = FALSE)
-
-
-#####  Adjusted model - spatial random effect
-
-m3_zip_c <- inla(f3,
-           data =  cma_sp@data,
-           family = "zeroinflatedpoisson1",
-           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
-           control.predictor = list(compute = TRUE),
-           verbose = FALSE)
 
 
 ####### Model Comparisons
 
 
-model_list_all_c <- list(m0_c,m0_zip_c,m1_c,m1_zip_c,m2_c,m2_zip_c,m3_c,m3_zip_c)
-model_names <- c("Unadjusted Poisson - Non Spatial",
-                      "Unadjusted ZIP - Non Spatial",
-                      "Unadjusted Poisson - Spatial",
-                      "Unadjusted ZIP - Spatial",
-                      "Minimally Adjusted Poisson - Spatial",
-                      "Minimally Adjusted ZIP - Spatial",
-                      "Adjusted Poisson - Spatial",
-                      "Adjusted ZIP - Spatial"
+model_list_cyclist <- list(m1_cyclist,m1_cyclist_zip,m2_cyclist,m2_cyclist_zip,m3_cyclist, m3_cyclist_zip)
+model_names <- c("Poisson",
+                 "ZI Poisson",
+                 "Poisson - Unstructured RE",
+                 "ZI Poisson - Unstructured RE",
+                 "Poisson - Spatial + Unstructured RE",
+                 "ZIPoisson  - Spatial + Unstructured RE"
                       )
 
-cyclist_full_model_details <- summarise_models_details(model_list_all_c,model_names )
+cyclist_crashes_full_model_details <- summarise_models_details(inla_model_list = model_list_cyclist,inla_model_names = model_names )
 
 
-cyclist_full_model_details %>%  
-  mutate(across(where(is.numeric), function(x) round(x, digits = 3))) %>% 
-  select(-contains("mode"),-contains("0.5quant"),-contains("kld"),-contains("sd")) %>% 
-   flextable()
+cyclist_crashes_full_model_details %>%  
+  filter(str_detect(term,"WAIC|DIC")) %>% 
+  select(term,contains("mean")) %>% 
+  pivot_longer(cols = contains("Poisson")) %>% 
+  pivot_wider(id_cols = name,names_from = term,values_from = value) %>% 
+  arrange(WAIC)
+
+
+#Best fitting model is ZIP BYM2
+
+#######  Adjusted model - 
+
+f4_cyclist <-  n_cyclist_casualty_claims ~ vandix_z*region + ln_roads_km_c + f(ui, model = 'bym2', graph = cma_adj, hyper = prior, adjust.for.con.comp = TRUE, constr = TRUE, scale.model = TRUE)
+
+m4_cyclist_zip <- inla(f4_cyclist,
+           data =  cma_sp@data,
+           family = "zeroinflatedpoisson1",
+           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
+           control.predictor = list(compute = TRUE),
+           verbose = FALSE)
+
+
+#####  Adjusted model - spatial random effect
+
+f5_cyclist <-  n_cyclist_casualty_claims ~ vandix_z*region + ln_roads_km_c +  roads_prop_highway_arterial_z +  bike_infra_cat + population_100_c + number_intersections_10_c  + f(ui, model = 'bym2', graph = cma_adj, hyper = prior, adjust.for.con.comp = TRUE, constr = TRUE, scale.model = TRUE)
+
+m5_cyclist_zip <- inla(f5_cyclist,
+           data =  cma_sp@data,
+           family = "zeroinflatedpoisson1",
+           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
+           control.predictor = list(compute = TRUE),
+           verbose = FALSE)
 
 ######### Region Specific IRRs from Posterior Distribution of Vandix + Region Interaction
+cyclist_vandix_irr_unadjusted <- inla.posterior.sample(1000, m3_cyclist_zip)
+cyclist_vandix_irr_minimally_adjusted <- inla.posterior.sample(1000, m4_cyclist_zip)
+cyclist_vandix_irr_adjusted <- inla.posterior.sample(1000, m5_cyclist_zip)
 
-
-cyclist_vandix_irr_m0_sample <- inla.posterior.sample(1000, m0_zip_c)
-cyclist_vandix_irr_m1_sample <- inla.posterior.sample(1000, m1_zip_c)
-cyclist_vandix_irr_m2_sample <- inla.posterior.sample(1000, m2_zip_c)
-cyclist_vandix_irr_m3_sample <- inla.posterior.sample(1000, m3_zip_c)
-
-m0_vandix_irr_cyclist <- vandix_irr(cyclist_vandix_irr_m0_sample) %>% 
+cyclist_vandix_irr_unadjusted <- vandix_irr(cyclist_vandix_irr_unadjusted) %>% 
   mutate(`IRR (95% CI)` = paste0(
     signif(irr_mean, 3),
     " (",
@@ -853,7 +1107,7 @@ m0_vandix_irr_cyclist <- vandix_irr(cyclist_vandix_irr_m0_sample) %>%
     signif(irr_high, 3),
     ")"
   ))
-m1_vandix_irr_cyclist <- vandix_irr(cyclist_vandix_irr_m1_sample)%>%
+cyclist_vandix_irr_minimally_adjusted <- vandix_irr(cyclist_vandix_irr_minimally_adjusted)%>%
   mutate(`IRR (95% CI)` = paste0(
     signif(irr_mean, 3),
     " (",
@@ -862,16 +1116,7 @@ m1_vandix_irr_cyclist <- vandix_irr(cyclist_vandix_irr_m1_sample)%>%
     signif(irr_high, 3),
     ")"
   ))
-m2_vandix_irr_cyclist <- vandix_irr(cyclist_vandix_irr_m2_sample)%>%
-  mutate(`IRR (95% CI)` = paste0(
-    signif(irr_mean, 3),
-    " (",
-    signif(irr_low, 3),
-    ", ",
-    signif(irr_high, 3),
-    ")"
-  ))
-m3_vandix_irr_cyclist <- vandix_irr(cyclist_vandix_irr_m3_sample)%>%
+cyclist_vandix_irr_adjusted <- vandix_irr(cyclist_vandix_irr_adjusted)%>%
   mutate(`IRR (95% CI)` = paste0(
     signif(irr_mean, 3),
     " (",
@@ -881,25 +1126,24 @@ m3_vandix_irr_cyclist <- vandix_irr(cyclist_vandix_irr_m3_sample)%>%
     ")"
   ))
 
-vandix_irr_cyclist_crashes_models <- left_join(m0_vandix_irr_cyclist,m1_vandix_irr_cyclist,by="region_name") %>% 
-  left_join(m2_vandix_irr_cyclist,by="region_name") %>% 
-  left_join(m3_vandix_irr_cyclist,by="region_name") %>% 
+
+vandix_irr_cyclist_crashes_models <- left_join(cyclist_vandix_irr_unadjusted,cyclist_vandix_irr_minimally_adjusted,by="region") %>% 
+  left_join(cyclist_vandix_irr_adjusted,by="region") %>% 
   mutate(Term = "VanDIX (SD)") %>% 
-  select(region_name,Term,contains("IRR (95% CI)")) %>% 
+  select(Term,region,contains("IRR (95% CI)")) %>% 
   flextable() %>%
-  add_header_row( values = c("","Incidence Rate Ratio (95% Credible Interval)"),colwidths = c(2,4)) %>% 
-    set_header_labels(values = c("Region","Term","Unadjusted Non-Spatial","Unadjusted Spatial","Minimally Adjusted Spatial","Adjusted Spatial")) %>% 
+  add_header_row( values = c("","Incidence Rate Ratio (95% Credible Interval)"),colwidths = c(2,3)) %>% 
+    set_header_labels(values = c("Term","Region","Unadjusted","Minimally Adjusted","Adjusted")) %>% 
     footnote(
       i = c(2),
-      j = c(3, 4, 5, 6),
+      j = c(3, 4, 5),
       value = as_paragraph(
-        c("Fit with idd random effect at dissemination area level",
-          "Fit with idd and spatial random effect at dissemination area level",
-          "Fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of road lanes",
-          "Fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of road lanes; (ii) proportion of lanes classified as highway or arterial; (iii) number of intersections; (iv) presence of bicycling infrastructure; (v) total population"
+        c("Poisson model fit with idd and spatial random effect at dissemination area level",
+          "Poisson model fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of road lanes",
+          "Poisson model fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of road lanes; (ii) proportion of lanes classified as highway or arterial; (iii) number of intersections; (iv) presence of bicycling infrastructure; (v) total population"
         )
       ),
-      ref_symbols = c("a", "b", "c", "d"),
+      ref_symbols = c("a", "b", "c"),
       part = "header",
       inline = FALSE
     ) %>%
@@ -907,23 +1151,22 @@ vandix_irr_cyclist_crashes_models <- left_join(m0_vandix_irr_cyclist,m1_vandix_i
   theme_booktabs() %>%
   set_table_properties(layout = "autofit") %>%
   valign(valign = "bottom", part = "header") %>%
-    set_caption("Table 4. Incidence Rate Ratios (IRR) with 95% Credible Intervals for motor vehicle crashes in relation to a standard deviation increase in deprivation, measured by the Vancouver Area Deprivation Index (VanDIX). Results are shown for different statistical models: Unadjusted Non-Spatial, Unadjusted Spatial, Minimally Adjusted Spatial, and Adjusted Spatial across various regions in the province.")
+    set_caption("Table 4. Incidence Rate Ratios (IRR) with 95% Credible Intervals for motor vehicle crashes in relation to a standard deviation increase in deprivation, measured by the Vancouver Area Deprivation Index (VanDIX). Results are shown for different statistical models including unadjusted, minimally adjusted and adjusted.")
 
 
 
 
-
-################################
 
 ################################################################                
-################ Pedestrian
-################################################################  
+################ Pedestrian Crashes
+################################################################ 
+
 
 
 prior <- list(
   prec = list(
     prior = "pc.prec",
-    param = c(1, 0.0001)),
+    param = c(1, 0.001)),
   phi = list(
     prior = "pc",
     param = c(0.5, 0.5))
@@ -932,149 +1175,152 @@ prior <- list(
 
 ############## Poisson models
 
-#### Unadjusted model - no spatial random effect
 
-f0 <-  n_pedestrian_casualty_claims ~ vandix_z*region_name + f(ui, model = 'iid')
+#### Unadjusted model - no random effects
 
-m0_p <- inla(
-  f0,
+f1_pedestrian <-  n_pedestrian_casualty_claims ~ vandix_z * region
+
+m1_pedestrian <- inla(
+  f1_pedestrian,
   data = cma_sp@data,
   family = "poisson",
-  control.compute = list(
-    dic = TRUE,
-    waic = TRUE,
-    config = TRUE
-  ),
+  control.compute = list(dic = TRUE, waic = TRUE, config = TRUE),
+  control.predictor = list(compute = TRUE),
+  verbose = FALSE
+)
+
+#### Unadjusted model - unstructured random effect
+
+f2_pedestrian <-  n_pedestrian_casualty_claims ~ vandix_z * region + f(ui, model = 'iid')
+
+m2_pedestrian <- inla(
+  f2_pedestrian,
+  data = cma_sp@data,
+  family = "poisson",
+  control.compute = list(dic = TRUE, waic = TRUE, config = TRUE),
   control.predictor = list(compute = TRUE),
   verbose = FALSE
 )
 
 ##### Unadjusted model - spatial random effect
 
+f3_pedestrian <-  n_pedestrian_casualty_claims ~ vandix_z * region + f(
+  ui,
+  model = 'bym2',
+  graph = cma_adj,
+  hyper = prior,
+  adjust.for.con.comp = TRUE,
+  constr = TRUE,
+  scale.model = TRUE
+)
 
-f1 <-  n_pedestrian_casualty_claims ~ vandix_z*region_name + f(ui, model = 'bym2', graph = cma_adj, hyper = prior, adjust.for.con.comp = TRUE, constr = TRUE, scale.model = TRUE)
+#adjust.for.con.comp = TRUE, scale.model = TRUE:  assigns one intercept to each region in addition to using a sum-to-zero constraint for each connected region. By adding an intercept for each region, we infer that the baseline prevalence is different in the disconnected regions.
 
-m1_p <- inla(f1,
-           data =  cma_sp@data,
-           family = "poisson",
-           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
-           control.predictor = list(compute = TRUE),
-           verbose = FALSE)
-
-#####  Minimally Adjusted model - spatial random effect
-
-f2 <-  n_pedestrian_casualty_claims ~ vandix_z*region_name + ln_roads_km_c + f(ui, model = 'bym2', graph = cma_adj, hyper = prior, adjust.for.con.comp = TRUE, constr = TRUE, scale.model = TRUE)
-
-m2_p <- inla(f2,
-           data =  cma_sp@data,
-           family = "poisson",
-           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
-           control.predictor = list(compute = TRUE),
-           verbose = FALSE)
-
-
-#####  Adjusted model - spatial random effect
-
-
-f3 <-  n_pedestrian_casualty_claims ~ vandix_z*region_name + ln_roads_km_c +  roads_prop_highway_arterial_z + bike_infra_cat + population_100_c + number_intersections_10_c + f(ui, model = 'bym2', graph = cma_adj, hyper = prior, adjust.for.con.comp = TRUE, constr = TRUE, scale.model = TRUE)
-
-m3_p <- inla(f3,
-           data =  cma_sp@data,
-           family = "poisson",
-           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
-           control.predictor = list(compute = TRUE),
-           verbose = FALSE)
-
-
-summary(m3_p)
+m3_pedestrian <- inla(
+  f3_pedestrian,
+  data =  cma_sp@data,
+  family = "poisson",
+  control.compute = list(dic = TRUE, waic = TRUE, config = TRUE),
+  control.predictor = list(compute = TRUE),
+  verbose = FALSE
+)
 
 ############## ZIP models
 
-#### Unadjusted model - no spatial random effect
+#### Unadjusted model - no random effects
 
-m0_zip_p <- inla(
-  f0,
+m1_pedestrian_zip <- inla(
+  f1_pedestrian,
   data = cma_sp@data,
   family = "zeroinflatedpoisson1",
-  control.compute = list(
-    dic = TRUE,
-    waic = TRUE,
-    config = TRUE
-  ),
+  control.compute = list(dic = TRUE, waic = TRUE, config = TRUE),
   control.predictor = list(compute = TRUE),
   verbose = FALSE
 )
 
 
+
+#### Unadjusted model - unstructured random effect
+
+m2_pedestrian_zip <- inla(
+  f2_pedestrian,
+  data = cma_sp@data,
+  family = "zeroinflatedpoisson1",
+  control.compute = list(dic = TRUE, waic = TRUE, config = TRUE),
+  control.predictor = list(compute = TRUE),
+  verbose = FALSE
+)
+
 ##### Unadjusted model - spatial random effect
 
-m1_zip_p <- inla(f1,
-           data =  cma_sp@data,
-           family = "zeroinflatedpoisson1",
-           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
-           control.predictor = list(compute = TRUE),
-           verbose = FALSE)
+#adjust.for.con.comp = TRUE, scale.model = TRUE:  assigns one intercept to each region in addition to using a sum-to-zero constraint for each connected region. By adding an intercept for each region, we infer that the baseline prevalence is different in the disconnected regions.
 
 
-#####  Minimally Adjusted model - spatial random effect
+m3_pedestrian_zip <- inla(
+  f3_pedestrian,
+  data =  cma_sp@data,
+  family = "zeroinflatedpoisson1",
+  control.compute = list(dic = TRUE, waic = TRUE, config = TRUE),
+  control.predictor = list(compute = TRUE),
+  verbose = FALSE
+)
 
-m2_zip_p <- inla(f2,
-           data =  cma_sp@data,
-           family = "zeroinflatedpoisson1",
-           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
-           control.predictor = list(compute = TRUE),
-           verbose = FALSE)
-
-
-#####  Adjusted model - spatial random effect
-
-m3_zip_p <- inla(f3,
-           data =  cma_sp@data,
-           family = "zeroinflatedpoisson1",
-           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
-           control.predictor = list(compute = TRUE),
-           verbose = FALSE)
 
 
 ####### Model Comparisons
 
 
-model_list_all_p <- list(m0_p,
-                         m0_zip_p,
-                         m1_p,
-                         m1_zip_p,
-                         m2_p,
-                         m2_zip_p,
-                         m3_p,
-                         m3_zip_p
-                         )
-model_names <- c("Unadjusted Poisson - Non Spatial",
-                      "Unadjusted ZIP - Non Spatial",
-                      "Unadjusted Poisson - Spatial",
-                      "Unadjusted ZIP - Spatial",
-                      "Minimally Adjusted Poisson - Spatial",
-                      "Minimally Adjusted ZIP - Spatial",
-                      "Adjusted Poisson - Spatial",
-                      "Adjusted ZIP - Spatial"
+model_list_pedestrian <- list(m1_pedestrian,m1_pedestrian_zip,m2_pedestrian,m2_pedestrian_zip,m3_pedestrian, m3_pedestrian_zip)
+model_names <- c("Poisson",
+                 "ZI Poisson",
+                 "Poisson - Unstructured RE",
+                 "ZI Poisson - Unstructured RE",
+                 "Poisson - Spatial + Unstructured RE",
+                 "ZIPoisson  - Spatial + Unstructured RE"
                       )
 
-pedestrian_full_model_details <- summarise_models_details(model_list_all_p,model_names )
+pedestrian_crashes_full_model_details <- summarise_models_details(inla_model_list = model_list_pedestrian,inla_model_names = model_names )
 
 
-pedestrian_full_model_details %>%  
-  mutate(across(where(is.numeric), function(x) round(x, digits = 3))) %>% 
-  select(-contains("mode"),-contains("0.5quant"),-contains("kld"),-contains("sd")) %>% 
-   flextable()
+pedestrian_crashes_full_model_details %>%  
+  filter(str_detect(term,"WAIC|DIC")) %>% 
+  select(term,contains("mean")) %>% 
+  pivot_longer(cols = contains("Poisson")) %>% 
+  pivot_wider(id_cols = name,names_from = term,values_from = value) %>% 
+  arrange(WAIC)
+
+
+#Best fitting model is ZIP BYM2
+
+#######  Adjusted model - 
+
+f4_pedestrian <-  n_pedestrian_casualty_claims ~ vandix_z*region + ln_roads_km_c + f(ui, model = 'bym2', graph = cma_adj, hyper = prior, adjust.for.con.comp = TRUE, constr = TRUE, scale.model = TRUE)
+
+m4_pedestrian_zip <- inla(f4_pedestrian,
+           data =  cma_sp@data,
+           family = "zeroinflatedpoisson1",
+           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
+           control.predictor = list(compute = TRUE),
+           verbose = FALSE)
+
+
+#####  Adjusted model - spatial random effect
+
+f5_pedestrian <-  n_pedestrian_casualty_claims ~ vandix_z*region + ln_roads_km_c +  roads_prop_highway_arterial_z +  bike_infra_cat + population_100_c + number_intersections_10_c  + f(ui, model = 'bym2', graph = cma_adj, hyper = prior, adjust.for.con.comp = TRUE, constr = TRUE, scale.model = TRUE)
+
+m5_pedestrian_zip <- inla(f5_pedestrian,
+           data =  cma_sp@data,
+           family = "zeroinflatedpoisson1",
+           control.compute = list(dic = TRUE, waic = TRUE,config=TRUE),
+           control.predictor = list(compute = TRUE),
+           verbose = FALSE)
 
 ######### Region Specific IRRs from Posterior Distribution of Vandix + Region Interaction
+pedestrian_vandix_irr_unadjusted <- inla.posterior.sample(1000, m3_pedestrian_zip)
+pedestrian_vandix_irr_minimally_adjusted <- inla.posterior.sample(1000, m4_pedestrian_zip)
+pedestrian_vandix_irr_adjusted <- inla.posterior.sample(1000, m5_pedestrian_zip)
 
-
-pedestrian_vandix_irr_m0_sample <- inla.posterior.sample(1000, m0_zip_p)
-pedestrian_vandix_irr_m1_sample <- inla.posterior.sample(1000, m1_zip_p)
-pedestrian_vandix_irr_m2_sample <- inla.posterior.sample(1000, m2_zip_p)
-pedestrian_vandix_irr_m3_sample <- inla.posterior.sample(1000, m3_zip_p)
-
-m0_vandix_irr_pedestrian <- vandix_irr(pedestrian_vandix_irr_m0_sample) %>% 
+pedestrian_vandix_irr_unadjusted <- vandix_irr(pedestrian_vandix_irr_unadjusted) %>% 
   mutate(`IRR (95% CI)` = paste0(
     signif(irr_mean, 3),
     " (",
@@ -1083,7 +1329,7 @@ m0_vandix_irr_pedestrian <- vandix_irr(pedestrian_vandix_irr_m0_sample) %>%
     signif(irr_high, 3),
     ")"
   ))
-m1_vandix_irr_pedestrian <- vandix_irr(pedestrian_vandix_irr_m1_sample)%>%
+pedestrian_vandix_irr_minimally_adjusted <- vandix_irr(pedestrian_vandix_irr_minimally_adjusted)%>%
   mutate(`IRR (95% CI)` = paste0(
     signif(irr_mean, 3),
     " (",
@@ -1092,16 +1338,7 @@ m1_vandix_irr_pedestrian <- vandix_irr(pedestrian_vandix_irr_m1_sample)%>%
     signif(irr_high, 3),
     ")"
   ))
-m2_vandix_irr_pedestrian <- vandix_irr(pedestrian_vandix_irr_m2_sample)%>%
-  mutate(`IRR (95% CI)` = paste0(
-    signif(irr_mean, 3),
-    " (",
-    signif(irr_low, 3),
-    ", ",
-    signif(irr_high, 3),
-    ")"
-  ))
-m3_vandix_irr_pedestrian <- vandix_irr(pedestrian_vandix_irr_m3_sample)%>%
+pedestrian_vandix_irr_adjusted <- vandix_irr(pedestrian_vandix_irr_adjusted)%>%
   mutate(`IRR (95% CI)` = paste0(
     signif(irr_mean, 3),
     " (",
@@ -1112,26 +1349,23 @@ m3_vandix_irr_pedestrian <- vandix_irr(pedestrian_vandix_irr_m3_sample)%>%
   ))
 
 
-
-vandix_irr_pedestrian_crashes_models <- left_join(m0_vandix_irr_pedestrian,m1_vandix_irr_pedestrian,by="region_name") %>% 
-  left_join(m2_vandix_irr_pedestrian,by="region_name") %>% 
-  left_join(m3_vandix_irr_pedestrian,by="region_name") %>% 
+vandix_irr_pedestrian_crashes_models <- left_join(pedestrian_vandix_irr_unadjusted,pedestrian_vandix_irr_minimally_adjusted,by="region") %>% 
+  left_join(pedestrian_vandix_irr_adjusted,by="region") %>% 
   mutate(Term = "VanDIX (SD)") %>% 
-  select(region_name,Term,contains("IRR (95% CI)")) %>% 
+  select(Term,region,contains("IRR (95% CI)")) %>% 
   flextable() %>%
-  add_header_row( values = c("","Incidence Rate Ratio (95% Credible Interval)"),colwidths = c(2,4)) %>% 
-    set_header_labels(values = c("Region","Term","Unadjusted Non-Spatial","Unadjusted Spatial","Minimally Adjusted Spatial","Adjusted Spatial")) %>% 
+  add_header_row( values = c("","Incidence Rate Ratio (95% Credible Interval)"),colwidths = c(2,3)) %>% 
+    set_header_labels(values = c("Term","Region","Unadjusted","Minimally Adjusted","Adjusted")) %>% 
     footnote(
       i = c(2),
-      j = c(3, 4, 5, 6),
+      j = c(3, 4, 5),
       value = as_paragraph(
-        c("Zero-inflated Poisson model fit with idd random effect at dissemination area level",
-          "Zero-inflated Poisson model fit with idd and spatial random effect at dissemination area level",
-          "Zero-inlfated Poisson model fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of road lanes",
-          "Zero-inlfated Poisson model fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of road lanes; (ii) proportion of lanes classified as highway or arterial; (iii) number of intersections; (iv) presence of bicycling infrastructure; (v) total population"
+        c("Poisson model fit with idd and spatial random effect at dissemination area level",
+          "Poisson model fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of road lanes",
+          "Poisson model fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of road lanes; (ii) proportion of lanes classified as highway or arterial; (iii) number of intersections; (iv) presence of bicycling infrastructure; (v) total population"
         )
       ),
-      ref_symbols = c("a", "b", "c", "d"),
+      ref_symbols = c("a", "b", "c"),
       part = "header",
       inline = FALSE
     ) %>%
@@ -1139,13 +1373,13 @@ vandix_irr_pedestrian_crashes_models <- left_join(m0_vandix_irr_pedestrian,m1_va
   theme_booktabs() %>%
   set_table_properties(layout = "autofit") %>%
   valign(valign = "bottom", part = "header") %>%
-    set_caption("Table 5. Incidence Rate Ratios (IRR) with 95% Credible Intervals for motor vehicle crashes that involved a pedestrian in relation to a standard deviation increase in deprivation, measured by the Vancouver Area Deprivation Index (VanDIX). Results are shown for different statistical models: Unadjusted Non-Spatial, Unadjusted Spatial, Minimally Adjusted Spatial, and Adjusted Spatial across various regions in the province.")
+    set_caption("Table 4. Incidence Rate Ratios (IRR) with 95% Credible Intervals for motor vehicle crashes in relation to a standard deviation increase in deprivation, measured by the Vancouver Area Deprivation Index (VanDIX). Results are shown for different statistical models including unadjusted, minimally adjusted and adjusted.")
 
+cma_da$re_all_adjusted <-  m5_all$summary.random$ui[1:nrow(cma_da),"mean"]
+cma_da$re_cyclist_adjusted <-  m5_cyclist_zip$summary.random$ui[1:nrow(cma_da),"mean"]
+cma_da$re_pedestrian_adjusted <-  m5_pedestrian_zip$summary.random$ui[1:nrow(cma_da),"mean"]
 
-
-cma_da$re_all_adjusted <-  m3$summary.random$ui[1:nrow(cma_da),"mean"]
-cma_da$re_cyclist_adjusted <-  m3_zip_c$summary.random$ui[1:nrow(cma_da),"mean"]
-cma_da$re_pedestrian_adjusted <-  m3_zip_p$summary.random$ui[1:nrow(cma_da),"mean"]
+beepr::beep(8)
 ```
 
 
@@ -1452,7 +1686,7 @@ table2 <- cma_da_tibble %>%
       right = TRUE,
       include.lowest = TRUE,
       ordered_result = TRUE,
-      labels = c("< -2","-2 to -1","-1 to 0","0 to 1","1 to 2",">2")
+      labels = c("< -2", "-2 to -1", "-1 to 0", "0 to 1", "1 to 2", ">2")
     )
   ) %>% group_by(vandix_z_c) %>%
   mutate(across(contains("prev"), ~ . * 100)) %>%
@@ -1463,26 +1697,28 @@ table2 <- cma_da_tibble %>%
     "Average Household Income ($)" = average_total_income_of_household_in_2020,
     "Labor Force Participation (%)" = participation_rate,
     "University Degree (%)" = university_degree_prevalence,
-    "Lone Parent Families (%)" = lone_parent_fam_prevalence,
+    "Single Parent Families (%)" = lone_parent_fam_prevalence,
     "Home Ownership (%)" = home_owner_prevalence
   ) %>%
   select(
     "VANDIX Z-Score",
+    "No High School (%)",
+    "Unemployment Rate (%)",
+    "University Degree (%)",
+    "Single Parent Families (%)",
     "Average Household Income ($)",
     "Home Ownership (%)",
-    "Lone Parent Families (%)",
-    "No High School (%)",
-    "University Degree (%)",
-    "Unemployment Rate (%)",
     "Labor Force Participation (%)"
   ) %>%
   remove_missing() %>%
   summarizor(by = c("VANDIX Z-Score")) %>%
-  as_flextable(spread_first_col = TRUE) %>% 
-    bold(part = "body",i = seq(1,28,by =4)) %>% 
-  set_caption("Table 2. Summary Statistics for each component of VanDIX score across one standard deviation change in the score.") %>% 
-  autofit() %>% 
-theme_booktabs()
+  as_flextable(spread_first_col = TRUE) %>%
+  bold(part = "body", i = seq(1, 28, by = 4)) %>%
+  set_caption(
+    "Table 2. Summary Statistics for each component of VanDIX score across one standard deviation change in the score."
+  ) %>%
+  autofit() %>%
+  theme_booktabs()
 
 table2
 
