@@ -419,12 +419,8 @@ cma_nb <- poly2nb(cma_sp, queen = TRUE)
 summary(cma_nb)
 
 # Read in road network data, focusing on bridges
-dra <- #road network polyline
-  st_read(dsn = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Processed Data/dra_subset.gpkg")
-# Filter road network for bridges and tunnels
-bridges <- dra %>% filter(TRANSPORT_LINE_STRUCTURE_CODE=="B"|TRANSPORT_LINE_STRUCTURE_CODE=="T")
-# Keep bridges outside BC boundary
-bridges_sub <- st_difference(bridges, bc_boundary)
+bridges_sub <- #road network polyline
+  st_read(dsn = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Processed Data/dra_briges_tunnels.gpkg")
 
 # library(mapview)
 # mapview(bridges_sub) + mapview(cma_da)
@@ -1786,7 +1782,7 @@ table1
 ### Vancouver Area Deprivation Index
 
 
-```{r figure 2}
+```{r figure 2, fig.height=12.75591,fig.width=10.09843}
 table2_data <- cma_da_tibble %>%
   mutate(
     vandix_z_c = cut(
@@ -2731,7 +2727,7 @@ map <- create_interactive_map(cma_da)
 # Save with custom HTML template to ensure proper initial state
 saveWidget(
   map,
-  "Supplementary Material/Supplementary Material 1.html",
+  "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Supplementary Material/Supplementary Material 1.html",
   selfcontained = TRUE,
   title = "Spatial Distribution of Model Inputs and Outputs"
 )
@@ -2814,7 +2810,7 @@ pedestrian_crashes_comparison <- model_selection_pedestrian %>%
 # Create a new Word document
 doc_sm2 <- read_docx(path = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Supplementary Material/sm_template_2.docx")
 
-word_size <- docx_dim(doc_sm3)
+word_size <- docx_dim(doc_sm2)
 
 width <- word_size$page['width'] - word_size$margins['left'] - word_size$margins['right']
 height <- word_size$page['height'] - word_size$margins['top'] - word_size$margins['bottom']
