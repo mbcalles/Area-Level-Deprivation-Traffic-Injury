@@ -9,3 +9,8 @@ Data/
 R/Archive/
 Outputs/
 Manuscript/
+Processed Data/dra_subset.gpkg
+Processed Data/da_v3_2021.gpkg
+Processed Data/da_v2_2021.gpkg
+Processed Data/da_v1_2021.gpkg
+Processed Data/census_2021.csv
