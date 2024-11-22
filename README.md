@@ -1,4 +1,4 @@
- Geographic Variability in the Relationship Between Neighbourhood Deprivation and Traffic Injury Risk Across British Columbia's Urban Regions
+# Geographic Variability in the Relationship Between Neighbourhood Deprivation and Traffic Injury Risk Across British Columbia's Urban Regions
 
 *Note: This is a work in progress. Scripts and documentation are being actively developed and updated.*
 
