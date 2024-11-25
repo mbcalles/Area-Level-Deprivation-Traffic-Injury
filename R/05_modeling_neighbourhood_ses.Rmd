@@ -2731,8 +2731,6 @@ saveWidget(
   selfcontained = TRUE,
   title = "Spatial Distribution of Model Inputs and Outputs"
 )
-
-map
 ```
 
 
