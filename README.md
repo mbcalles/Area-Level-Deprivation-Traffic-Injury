@@ -78,8 +78,11 @@ The study employs spatial statistical modeling to analyze the relationship betwe
 
 ## Results
 Results and visualizations are stored in:
-- `Figures/`: Maps and statistical plots
-- `Supplementary Material/`: Additional analyses and methodological details
+- `Tables/`: Tables with models results
+- `Figures/`: Maps and plots
+- `Supplementary Material/`: Additional maps of model inputs and outputs for each region
+
+![all injuries irr](Area-Level-Deprivation-Traffic-Injury/Tables/vandix_irr_all_crashes_models.svg)
 
 *Note: Results and supplementary materials are being actively updated as the analysis progresses.*
 
