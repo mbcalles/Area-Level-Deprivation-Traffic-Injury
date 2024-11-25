@@ -82,13 +82,13 @@ Consistent socieconomic gradient
 
 ### All traffic crashes
 ![all injuries irr](Tables/vandix_irr_all_crashes_models.svg)
-### All traffic crashes
+
+### Cyclist-involved crashes
 
 ![all injuries irr](Tables/vandix_irr_cyclist_crashes_models.svg)
-### All traffic crashes
+### Pedestrian-involved crashes
 
 ![all injuries irr](Tables/vandix_irr_pedestrian_crashes_models.svg)
-
 
 Results and visualizations are stored in:
 - `Tables/`: Tables with models results
