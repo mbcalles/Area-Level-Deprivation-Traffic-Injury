@@ -77,12 +77,23 @@ The study employs spatial statistical modeling to analyze the relationship betwe
   - Pedestrian-involved crashes
 
 ## Results
+
+Consistent socieconomic gradient
+
+### All traffic crashes
+![all injuries irr](Tables/vandix_irr_all_crashes_models.svg)
+
+### Cyclist-involved crashes
+
+![all injuries irr](Tables/vandix_irr_cyclist_crashes_models.svg)
+### Pedestrian-involved crashes
+
+![all injuries irr](Tables/vandix_irr_pedestrian_crashes_models.svg)
+
 Results and visualizations are stored in:
 - `Tables/`: Tables with models results
 - `Figures/`: Maps and plots
 - `Supplementary Material/`: Additional maps of model inputs and outputs for each region
-
-![all injuries irr](Area-Level-Deprivation-Traffic-Injury/Tables/vandix_irr_all_crashes_models.svg)
 
 *Note: Results and supplementary materials are being actively updated as the analysis progresses.*
 
