@@ -32,6 +32,7 @@ library(ggspatial)
 ## Project Structure
 ```
 ├── Figures/           # Generated visualizations and maps
+├── Tables/           # Generated tables for statistical models
 ├── Processed Data/    # Cleaned and processed datasets
 ├── R/                # R scripts for analysis
 │   ├── 00_filter_census_data.R              # Initial census data processing
@@ -78,22 +79,9 @@ The study employs spatial statistical modeling to analyze the relationship betwe
 
 ## Results
 
-Consistent socieconomic gradient
+Estimated a socieconomic gradient for each crash type in most regions. Region-specific associations between Vancouver Area Deprivation Index and traffic injury crashes in British Columbia (2019-2023) are shown below. Incidence Rate Ratios show crash risk change per standard deviation increase in deprivation from BYM2 Poisson models: unadjusted (no covariates), minimally adjusted (road length), and adjusted (full built environment). Results shown for all injury crashes, crashes involving cyclists, and crashes involving pedestrians, with 95% credible intervals
 
-### All traffic crashes
-![all injuries irr](Tables/vandix_irr_all_crashes_models.svg)
-
-### Cyclist-involved crashes
-
-![all injuries irr](Tables/vandix_irr_cyclist_crashes_models.svg)
-### Pedestrian-involved crashes
-
-![all injuries irr](Tables/vandix_irr_pedestrian_crashes_models.svg)
-
-Results and visualizations are stored in:
-- `Tables/`: Tables with models results
-- `Figures/`: Maps and plots
-- `Supplementary Material/`: Additional maps of model inputs and outputs for each region
+![all injuries irr](Figures/vandix_injury_irr_forest_plot.jpg)
 
 *Note: Results and supplementary materials are being actively updated as the analysis progresses.*
 
