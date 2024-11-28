@@ -17,6 +17,11 @@ editor_options:
 
 tictoc::tic()
 
+# Load fonts (run this once)
+# font_import()  # Uncomment if you haven't done this yet
+# loadfonts(device = "win")
+library(extrafont)
+library(hrbrthemes)
 library(INLA)         
 library(tidyverse)  
 library(sf)
@@ -25,7 +30,6 @@ library(spdep)
 library(flextable)     
 library(RColorBrewer)  
 library(rcartocolor)   
-library(cowplot)      
 library(janitor)       
 library(broom)
 library(ggspatial)
@@ -858,9 +862,9 @@ all_crashes_full_model_details <- create_inla_comparison_table(model_list = mode
 
 ######### Region Specific IRRs from Posterior Distribution of Vandix + Region Interaction
 
-all_vandix_irr_unadjusted <- inla.posterior.sample(1000, m3_all)
-all_vandix_irr_minimally_adjusted <- inla.posterior.sample(1000, m4_all)
-all_vandix_irr_adjusted <- inla.posterior.sample(1000, m5_all)
+all_vandix_irr_unadjusted <- inla.posterior.sample(5000, m3_all)
+all_vandix_irr_minimally_adjusted <- inla.posterior.sample(5000, m4_all)
+all_vandix_irr_adjusted <- inla.posterior.sample(5000, m5_all)
 
 all_vandix_irr_unadjusted <- vandix_irr(all_vandix_irr_unadjusted) %>%
   mutate(`IRR (95% CI)` = paste0(
@@ -1122,9 +1126,9 @@ cyclist_crashes_full_model_details <- create_inla_comparison_table(model_list = 
 
 
 ######### Region Specific IRRs from Posterior Distribution of Vandix + Region Interaction
-cyclist_vandix_irr_unadjusted <- inla.posterior.sample(1000, m3_cyclist_zip)
-cyclist_vandix_irr_minimally_adjusted <- inla.posterior.sample(1000, m4_cyclist_zip)
-cyclist_vandix_irr_adjusted <- inla.posterior.sample(1000, m5_cyclist_zip)
+cyclist_vandix_irr_unadjusted <- inla.posterior.sample(5000, m3_cyclist_zip)
+cyclist_vandix_irr_minimally_adjusted <- inla.posterior.sample(5000, m4_cyclist_zip)
+cyclist_vandix_irr_adjusted <- inla.posterior.sample(5000, m5_cyclist_zip)
 
 cyclist_vandix_irr_unadjusted <- vandix_irr(cyclist_vandix_irr_unadjusted) %>%
   mutate(`IRR (95% CI)` = paste0(
@@ -1178,9 +1182,9 @@ vandix_irr_cyclist_crashes_models <- left_join(cyclist_vandix_irr_unadjusted,
     j = c(3, 4, 5),
     value = as_paragraph(
       c(
-        "Poisson model fit with idd and spatial random effect at dissemination area level",
-        "Poisson model fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of road lanes",
-        "Poisson model fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of road lanes; (ii) proportion of lanes classified as highway or arterial; (iii) number of intersections; (iv) presence of bicycling infrastructure; (v) total population"
+        "Zero-Inflated Poisson model fit with idd and spatial random effect at dissemination area level",
+        "Zero-Inflated Poisson model fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of road lanes",
+        "Zero-Inflated Poisson model fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of road lanes; (ii) proportion of lanes classified as highway or arterial; (iii) number of intersections; (iv) presence of bicycling infrastructure; (v) total population"
       )
     ),
     ref_symbols = c("a", "b", "c"),
@@ -1398,9 +1402,9 @@ pedestrian_crashes_full_model_details <- create_inla_comparison_table(model_list
 
 
 ######### Region Specific IRRs from Posterior Distribution of Vandix + Region Interaction
-pedestrian_vandix_irr_unadjusted <- inla.posterior.sample(1000, m3_pedestrian_zip)
-pedestrian_vandix_irr_minimally_adjusted <- inla.posterior.sample(1000, m4_pedestrian_zip)
-pedestrian_vandix_irr_adjusted <- inla.posterior.sample(1000, m5_pedestrian_zip)
+pedestrian_vandix_irr_unadjusted <- inla.posterior.sample(5000, m3_pedestrian_zip)
+pedestrian_vandix_irr_minimally_adjusted <- inla.posterior.sample(5000, m4_pedestrian_zip)
+pedestrian_vandix_irr_adjusted <- inla.posterior.sample(5000, m5_pedestrian_zip)
 
 pedestrian_vandix_irr_unadjusted <- vandix_irr(pedestrian_vandix_irr_unadjusted) %>%
   mutate(`IRR (95% CI)` = paste0(
@@ -1454,9 +1458,9 @@ vandix_irr_pedestrian_crashes_models <- left_join(pedestrian_vandix_irr_unadjust
     j = c(3, 4, 5),
     value = as_paragraph(
       c(
-        "Poisson model fit with idd and spatial random effect at dissemination area level",
-        "Poisson model fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of road lanes",
-        "Poisson model fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of road lanes; (ii) proportion of lanes classified as highway or arterial; (iii) number of intersections; (iv) presence of bicycling infrastructure; (v) total population"
+        "Zero-Inflated Poisson model fit with idd and spatial random effect at dissemination area level",
+        "Zero-Inflated Poisson model fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of road lanes",
+        "Zero-Inflated Poisson model fit with idd and spatial random effect at dissemination area level + adjusted for (i) total length of road lanes; (ii) proportion of lanes classified as highway or arterial; (iii) number of intersections; (iv) presence of bicycling infrastructure; (v) total population"
       )
     ),
     ref_symbols = c("a", "b", "c"),
@@ -1501,11 +1505,7 @@ cma_boundary <- cma_da %>%
 
 nb_colours <- 16
 colour_pal <- colorRampPalette(carto_pal(12, "Antique"))(nb_colours)
-library(extrafont)
 
-# Load fonts (run this once)
-# font_import()  # Uncomment if you haven't done this yet
-# loadfonts(device = "win")
 
 label_positions <- data.frame(
   cma_name = cma_centroids$cma_name,
@@ -1897,7 +1897,7 @@ vandix_distribution <-  cma_da_tibble %>%
    ) +
    scale_fill_carto_d(name = "Quartiles", palette = "Geyser") + 
    facet_wrap(~ name, scales = "free_x", ncol = 1) +
-   hrbrthemes::theme_ipsum_es(axis_title_size = 12,
+   theme_ipsum_es(axis_title_size = 12,
                               grid = "XxYy",
                               ticks = TRUE) +
      theme(panel.spacing = unit(0.001, "lines")) +
@@ -1939,28 +1939,202 @@ vandix_irr_all_crashes_models
 
 
 save_as_docx(vandix_irr_all_crashes_models, path = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Tables/table_3.docx")
+save_as_image(vandix_irr_all_crashes_models %>% autofit(), "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Tables/vandix_irr_all_crashes_models.svg", expand = 1, res = 150)
 
+
+
+
+all_irr_fp <- bind_rows(
+ all_vandix_irr_unadjusted %>% mutate(Model = "Unadjusted"),
+  all_vandix_irr_minimally_adjusted %>% mutate(Model = "Minimally Adjusted"),
+  all_vandix_irr_adjusted %>% mutate(Model = "Adjusted")) %>% 
+  mutate(Region = factor(region,levels = region_levels %>% rev()),
+         Model = factor(Model, levels = c("Unadjusted","Minimally Adjusted","Adjusted"))) %>% 
+  ggplot(aes(x = Region, y = irr_mean, color = Model)) +
+    geom_hline(yintercept = 1,linetype = "dashed") + 
+  geom_point(position = position_dodge(width = 0.5), size = 2) +
+  geom_errorbar(aes(ymin = irr_low, ymax = irr_high), 
+                 position = position_dodge(width = 0.5), width = 0.5) +
+  scale_y_log10() + 
+  labs(y = "Incidence Rate Ratio (95% Credible Interval)",
+       x = "Region",
+       color = "Model",
+       title = "All injury crashes") +
+  scale_color_ipsum() +
+  theme_ipsum_es() + 
+  theme(axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12),
+      legend.position = "bottom"
+  ) + 
+    coord_flip() 
+
+ 
+ggsave(device = "jpg",
+  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/vandix_injury_all_irr_forest_plot.jpg",
+  plot = all_irr_fp,
+  units = "mm",
+  height = 190*1.25,
+  width = 140*1.25,
+  dpi = 600)
+all_irr_fp
 ```
 
 
 ##### Cyclist Involved Injury Crashes
 
 
-```{r table 4}
+```{r table 4,fig.width=190/25.4,fig.height=240/25.4}
 
 vandix_irr_cyclist_crashes_models
 
 
 save_as_docx(vandix_irr_cyclist_crashes_models, path = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Tables/table_4.docx")
+save_as_image(vandix_irr_cyclist_crashes_models %>% autofit(), "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Tables/vandix_irr_cyclist_crashes_models.svg", expand = 1, res = 150)
 
+
+
+cyclist_irr_fp <- bind_rows(
+ cyclist_vandix_irr_unadjusted %>% mutate(Model = "Unadjusted"),
+  cyclist_vandix_irr_minimally_adjusted %>% mutate(Model = "Minimally Adjusted"),
+  cyclist_vandix_irr_adjusted %>% mutate(Model = "Adjusted")) %>% 
+  mutate(Region = factor(region,levels = region_levels %>% rev()),
+         Model = factor(Model, levels = c("Unadjusted","Minimally Adjusted","Adjusted"))) %>% 
+  ggplot(aes(x = Region, y = irr_mean, color = Model)) +
+    geom_hline(yintercept = 1,linetype = "dashed") + 
+  geom_point(position = position_dodge(width = 0.5), size = 2) +
+  geom_errorbar(aes(ymin = irr_low, ymax = irr_high), 
+                 position = position_dodge(width = 0.5), width = 0.5) +
+  scale_y_log10() + 
+  labs(y = "Incidence Rate Ratio (95% Credible Interval)",
+       x = "Region",
+       color = "Model",
+       title = "Cyclist-involved injury crashes") +
+  scale_color_ipsum() +
+  theme_ipsum_es() + 
+  theme(axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12),
+      legend.position = "bottom"
+  ) + 
+  coord_flip() 
+
+ggsave(device = "jpg",
+  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/vandix_injury_cyclist_irr_forest_plot.jpg",
+  plot = cyclist_irr_fp,
+  units = "mm",
+  height = 190*1.25,
+  width = 140*1.25,
+  dpi = 600)
+
+cyclist_irr_fp
 ```
 
 ##### Pedestrian Involved Injury Crashes
 
 
-```{r table 5}
+```{r table 5,fig.width=190/25.4,fig.height=240/25.4}
+
+library(hrbrthemes)
 
 vandix_irr_pedestrian_crashes_models
+save_as_image(vandix_irr_pedestrian_crashes_models %>% autofit(), "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Tables/vandix_irr_pedestrian_crashes_models.svg", expand = 1, res = 150)
+
+
+pedestrian_irr_fp <- bind_rows(
+ pedestrian_vandix_irr_unadjusted %>% mutate(Model = "Unadjusted"),
+  pedestrian_vandix_irr_minimally_adjusted %>% mutate(Model = "Minimally Adjusted"),
+  pedestrian_vandix_irr_adjusted %>% mutate(Model = "Adjusted")) %>% 
+  mutate(Region = factor(region,levels = region_levels %>% rev()),
+         Model = factor(Model, levels = c("Unadjusted","Minimally Adjusted","Adjusted"))) %>% 
+  ggplot(aes(x = Region, y = irr_mean, color = Model)) +
+    geom_hline(yintercept = 1,linetype = "dashed") + 
+  geom_point(position = position_dodge(width = 0.5), size = 2) +
+  geom_errorbar(aes(ymin = irr_low, ymax = irr_high), 
+                 position = position_dodge(width = 0.5), width = 0.5) +
+  scale_y_log10() + 
+  labs(y = "Incidence Rate Ratio (95% Credible Interval)",
+       x = "Region",
+       color = "Model",
+       title = "Pedestrian-involved injury crashes") +
+  scale_color_ipsum() +
+  theme_ipsum_es() + 
+  theme(axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12),
+      legend.position = "bottom"
+  ) + 
+  coord_flip() 
+
+ggsave(device = "jpg",
+  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/vandix_injury_pedestrian_irr_forest_plot.jpg",
+  plot = pedestrian_irr_fp,
+  units = "mm",
+  height = 190*1.25,
+  width = 140*1.25,
+  dpi = 600)
+
+pedestrian_irr_fp
+
+
+```
+
+
+```{r,fig.width=190/25.4,fig.height=240/25.4}
+
+
+
+all_irr <- bind_rows(
+ all_vandix_irr_unadjusted %>% mutate(Model = "Unadjusted"),
+  all_vandix_irr_minimally_adjusted %>% mutate(Model = "Minimally Adjusted"),
+  all_vandix_irr_adjusted %>% mutate(Model = "Adjusted")) %>% 
+  mutate(`type` = "All")
+
+
+pedestrian_irr <-    bind_rows(
+ pedestrian_vandix_irr_unadjusted %>% mutate(Model = "Unadjusted"),
+  pedestrian_vandix_irr_minimally_adjusted %>% mutate(Model = "Minimally Adjusted"),
+  pedestrian_vandix_irr_adjusted %>% mutate(Model = "Adjusted"))  %>% 
+  mutate(`type` = "Pedestrian")
+
+all_modes <- bind_rows(all_irr,cyclist_irr,pedestrian_irr) %>% 
+  mutate(Region = factor(region,levels = region_levels %>% rev()),
+         Model = factor(Model, levels = c("Unadjusted","Minimally Adjusted","Adjusted"))) %>% 
+  ggplot(aes(x = Region, y = irr_mean, color = Model)) +
+    geom_hline(yintercept = 1,linetype = "dashed", colour = "grey30") + 
+  geom_point(position = position_dodge(width = 0.5), size = 1.5) +
+  geom_errorbar(aes(ymin = irr_low, ymax = irr_high), 
+                 position = position_dodge(width = 0.5), width = 0.25) +
+  facet_wrap(~type, nrow = 1) +
+  scale_y_log10() + 
+  labs(y = "Incidence Rate Ratio (95% Credible Interval)",
+       x = "Region",
+       title = "Association Between Deprivation and Motor Vehicle Crashes in British Columbia (2019-2023)",
+       subtitle = "Crashes Involving All Road Users, Cyclists, and Pedestrians By Region",
+       color = "Model") +
+  scale_color_ipsum() +
+  theme_ipsum_es(plot_title_size = 12,subtitle_size = 10,
+                 
+                 base_size = 9
+                  ) + 
+  theme(axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        legend.position = "bottom",
+        # Remove whitespace between facets
+        panel.spacing = unit(0.5, "lines"),
+        # Reduce plot margins
+        plot.margin = margin(5, 5, 5, 5),
+        # Reduce space around the facet strips
+        strip.text = element_text(margin = margin(2, 2, 2, 2))
+  ) + 
+  coord_flip()
+
+ggsave(device = "jpg",
+  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/vandix_injury_irr_forest_plot.jpg",
+  plot = all_modes,
+  units = "mm",
+  height = 190*1.25,
+  width = 190*1.25,
+  dpi = 600)
+
+all_modes
 
 ```
 
@@ -1983,6 +2157,8 @@ doc_t <- doc_t %>%
 
 # Save the document
 print(doc_t, target = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Tables/Tables.docx")
+
+
 
 ```
 
@@ -2835,6 +3011,8 @@ st1 <- bind_rows(
   fit_to_width(max_width = width)
 
 st1
+
+
 ```
 
 
