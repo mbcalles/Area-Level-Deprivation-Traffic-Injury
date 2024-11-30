@@ -1926,14 +1926,14 @@ ggsave(device = "jpg",
 ```
            
 
-### Socioeconomic Status and Crash Injury Incidence
+## Socioeconomic Status and Crash Injury Incidence
 
-#### Adjusted Relationships
+### Adjusted Relationships
 
 
-##### All Injury Crashes
+#### All Injury Crashes
 
-```{r table 2}
+```{r table 3,fig.width=190/25.4,fig.height=240/25.4}
 
 vandix_irr_all_crashes_models
 
@@ -1980,7 +1980,7 @@ all_irr_fp
 ```
 
 
-##### Cyclist Involved Injury Crashes
+#### Cyclist Involved Injury Crashes
 
 
 ```{r table 4,fig.width=190/25.4,fig.height=240/25.4}
@@ -2028,8 +2028,7 @@ ggsave(device = "jpg",
 cyclist_irr_fp
 ```
 
-##### Pedestrian Involved Injury Crashes
-
+#### Pedestrian Involved Injury Crashes
 
 ```{r table 5,fig.width=190/25.4,fig.height=240/25.4}
 
@@ -2093,6 +2092,12 @@ pedestrian_irr <-    bind_rows(
   pedestrian_vandix_irr_minimally_adjusted %>% mutate(Model = "Minimally Adjusted"),
   pedestrian_vandix_irr_adjusted %>% mutate(Model = "Adjusted"))  %>% 
   mutate(`type` = "Pedestrian")
+
+cyclist_irr <-    bind_rows(
+ cyclist_vandix_irr_unadjusted %>% mutate(Model = "Unadjusted"),
+  cyclist_vandix_irr_minimally_adjusted %>% mutate(Model = "Minimally Adjusted"),
+  cyclist_vandix_irr_adjusted %>% mutate(Model = "Adjusted"))  %>% 
+  mutate(`type` = "Cyclist")
 
 all_modes <- bind_rows(all_irr,cyclist_irr,pedestrian_irr) %>% 
   mutate(Region = factor(region,levels = region_levels %>% rev()),
