@@ -14,7 +14,7 @@ library(janitor)
 wd <- getwd()
 
 # Load previously processed Census geography data
-bc_da <- st_read(paste0(wd, "/Processed Data/da_v3_2021.gpkg")) 
+bc_da <- st_read(paste0(wd, "/Processed Data/da_v3_2021b.gpkg")) 
 
 bc_da_census <- read_csv(paste0(wd, "/Processed Data/census_2021.csv")) %>% 
   rename(dauid = geo_name) %>% 
@@ -137,4 +137,4 @@ bc_da <- bc_da %>%
   left_join(msdi, by = "dauid") 
 
 
-st_write(bc_da, dsn = paste0(wd, "/Processed Data/da_v4_2021.gpkg"))
+st_write(bc_da, dsn = paste0(wd, "/Processed Data/da_v4_2021b.gpkg"))

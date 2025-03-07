@@ -252,12 +252,12 @@ vandix_irr <- function(m.samp) {
 
 # Read spatial data for dissemination areas in British Columbia
 bc_boundary <- st_read(
-  "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Processed Data/da_v4_2021.gpkg"
+  "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Processed Data/da_v4_2021b.gpkg"
 ) %>% 
   st_union()
 
 cma_da <- st_read(
-  "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Processed Data/da_v4_2021.gpkg"
+  "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Processed Data/da_v4_2021b.gpkg"
 ) %>%
   mutate(cma_name = ifelse(
     str_detect(cmaname, "metropolitan influenced zone"),
@@ -401,6 +401,31 @@ cma_da <- cma_da %>%
 cma_da <- cma_da %>% 
   filter(total_lane_length_km>0) %>% #filter out DAs without any roads 
   filter(!is.na(vandix_z)) #filter out DAs missing deprivation score
+
+csd <- cma_da %>% 
+    st_drop_geometry() %>% 
+  group_by(csduid) %>% 
+  tally(sort=TRUE)
+
+types <- c("IRI","RDA","CY","DM","VL","T","S-É","IGD","IM","NL","RGM","TAL","TWL")
+
+csd_type <- cancensus::get_census(dataset='CA21', regions=list(PR="59"), 
+                          vectors=c("v_CA16_408","v_CA16_409","v_CA16_410"), level='CSD') %>%  
+  mutate(
+    Type = str_extract(`Region Name`, paste(types, collapse = "|")),
+    Name = str_remove(`Region Name`, paste0(" \\(", Type, "\\)")),
+  csduid = GeoUID  %>% as.numeric())
+
+csd %>% 
+  left_join(csd_type) %>% 
+  group_by(Type) %>% 
+  summarise(n = n(),
+            min_pop = min(Population),
+            pop = sum(Population),
+            max_pop = max(Population),
+            mean_pop = pop/n) %>% 
+  arrange(desc(pop))
+
 
 ```
 
@@ -1481,9 +1506,9 @@ cma_da$re_pedestrian_adjusted <-  m5_pedestrian_zip$summary.random$ui[1:nrow(cma
 ```
 
 
-# Results
+# Study Area
 
-## Study Area
+## Figure 1
 
 ```{r study area figure, fig.width= 9.448819, fig.height=9.448819,warning=FALSE,message=FALSE,fig.cap="Regional Grouping of Census Metropolitan and Agglomeration Areas. Labelled Points Represent Census Metroplitan Area and Census Agglomeration Centroids"}
 
@@ -1616,7 +1641,7 @@ study_area <- ggplot() +
 
 ggsave(
   device = "svg",
-  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/study_area.svg",
+  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/figure_1_study_area.svg",
   plot = study_area,
   units = "mm",
   height = 140*1.1,
@@ -1627,7 +1652,7 @@ ggsave(
 
 
 ggsave(
-  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/study_area.jpg",
+  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/figure_1_study_area.jpg",
   plot = study_area,
   units = "mm",
   height = 140*1.1,
@@ -1640,298 +1665,296 @@ study_area
 ```
 
 
-## Descriptive Statistics 
+# Results
+
+## Regional Characteristics
+
+### Table 1 - Population, Built Environment Characteristics
 
 ```{r table 1}
-
 cma_da_tibble <- cma_da %>%
   st_drop_geometry()
 
-table1 <- cma_da_tibble %>%  
+regions_data <- cma_da_tibble %>% 
+  group_by(region) %>% 
   summarise(
-    `Number of DAs` = format(n(), big.mark = ","),
+    # n = n(),
+    # median_pop_density = median(population/landarea),
+    # iqr_pop_density = IQR(population/landarea),
     
-    `Total Injury Crashes` = format(sum(n_casualty_claims), big.mark = ","),
+    total_population = sum(population),
+    # total_land_area = sum(landarea),,
+    total_lane_length_km = sum(total_lane_length_km),
+    # median_neighbourhood_size = median(landarea),
+    # iqr_neighbourhood_size = IQR(landarea)
+  )
+    
+  
+# Use scale() to standardize the variables
+regions_scaled <- scale(regions_data[, c("total_population","total_lane_length_km")])
+
+# Perform K-means clustering
+# Try different numbers of clusters
+set.seed(123)
+
+# Function to calculate total within-cluster sum of squares
+wss <- function(k) {
+  kmeans(regions_scaled, k, nstart = 10)$tot.withinss
+}
+
+# Determine optimal number of clusters using elbow method
+k_values <- 2:15
+wss_values <- sapply(k_values, wss)
+
+# Plot elbow curve
+plot(k_values, wss_values, type = "b", 
+     xlab = "Number of Clusters", 
+     ylab = "Total Within-Cluster Sum of Squares",
+     main = "Elbow Method for Optimal Clusters")
+
+# Perform clustering with chosen number of clusters (based on elbow plot)
+set.seed(123)
+cluster <- kmeans(regions_scaled, centers = 5)
+
+augment(cluster,regions_data) %>% 
+  arrange(.cluster)
+
+# Add cluster assignments to the original dataframe
+regions_data$Cluster <- cluster$cluster
+
+# Visualize the clusters
+ggplot(regions_data, aes(x = log(total_lane_length_km) , y = log(total_population), color = factor(Cluster), label = region)) +
+  geom_point(size = 4) +
+  ggrepel::geom_text_repel(point.padding = 0.5,size = 4,max.overlaps = 10000) +
+  labs(title = "Regional Clusters",
+       color = "Cluster") +
+  theme_minimal()
+
+
+
+total_row <- cma_da_tibble %>%
+ summarise(
+   Region = "Total Study Area",
+   `Number of DAs` = format(n(), big.mark = ","),
+   `Total Land Area (1000 Km2)` = round(sum(landarea/1000),1),
+   
+      
+      `Mean Land Area by DA (SD)` = paste0(
+     round(mean(landarea, na.rm = TRUE), 1), 
+     " (", round(sd(landarea , na.rm = TRUE), 1), ")"
+   ),
+   
+   
+   `Total Population (1000s)` = format(round(sum(population, na.rm = TRUE)/1000, 1), big.mark = ","),
+
+      `Mean Population Density by DA (SD)` = paste0(
+     round(mean(population/landarea, na.rm = TRUE), 1), 
+     " (", round(sd(population/landarea , na.rm = TRUE), 1), ")"
+   ),
+   
+   
+   `Mean Population by DA (SD)` = paste0(
+     round(mean(population, na.rm = TRUE), 1), 
+     " (", round(sd(population, na.rm = TRUE), 1), ")"
+   ),
+   
+   `Total Lane Kilometres (1000s)` = format(round(sum(total_lane_length_km, na.rm = TRUE)/1000, 1), big.mark = ","),
+
+      `Mean Lane Kilometres by DA (SD)` = paste0(
+     round(mean(total_lane_length_km, na.rm = TRUE), 1),
+     " (", round(sd(total_lane_length_km, na.rm = TRUE), 1), ")"
+   ),
+   
+   
+   `Mean  % Lane Kilometers Major by DA (SD)` = paste0(
+     round(100*mean(roads_prop_highway_arterial, na.rm = TRUE), 1), 
+     " (", round(100*sd(roads_prop_highway_arterial, na.rm = TRUE), 1), ")"
+   ),
+   
+   `Mean Total Intersections by DA (SD)` = paste0(
+     round(mean(number_intersections, na.rm = TRUE), 1),
+     " (", round(sd(number_intersections, na.rm = TRUE), 1), ")"
+   ),
+   
+   `Bike Infrastructure Presence` = paste0(round(100*sum(any_bike_infra=="Yes")/n(), 1),"%"),
+   
+    `Mean VanDIX (SD)` = paste0(
+     round(mean(vandix_z, na.rm = TRUE), 1),
+     " (", round(sd(vandix_z, na.rm = TRUE), 1), ")"
+   )
+ )
+
+
+
+# Main table
+table1 <- cma_da_tibble %>%  
+ rename(Region = region) %>% 
+ group_by(Region) %>%
+ summarise(
+   `Number of DAs` = format(n(), big.mark = ","),
+      `Total Land Area (1000 Km2)` = round(sum(landarea/1000),1),
+   
+         
+      `Mean Land Area by DA (SD)` = paste0(
+     round(mean(landarea, na.rm = TRUE), 1), 
+     " (", round(sd(landarea , na.rm = TRUE), 1), ")"
+   ),
+
+   `Total Population (1000s)` = format(round(sum(population, na.rm = TRUE)/1000, 1), big.mark = ","),
+   `Mean Population by DA (SD)` = paste0(
+     round(mean(population, na.rm = TRUE), 1), 
+     " (", round(sd(population, na.rm = TRUE), 1), ")"
+   ),
+   
+         `Mean Population Density by DA (SD)` = paste0(
+     round(mean(population/landarea, na.rm = TRUE), 1), 
+     " (", round(sd(population/landarea , na.rm = TRUE), 1), ")"
+   ),
+   
+   
+   `Total Lane Kilometres (1000s)` = format(round(sum(total_lane_length_km, na.rm = TRUE)/1000, 1), big.mark = ","),
+   
+   `Mean Lane Kilometres by DA (SD)` = paste0(
+     round(mean(total_lane_length_km, na.rm = TRUE), 1),
+     " (", round(sd(total_lane_length_km, na.rm = TRUE), 1), ")"
+   ),
+   
+   `Mean  % Lane Kilometers Major by DA (SD)` = paste0(
+     round(100*mean(roads_prop_highway_arterial, na.rm = TRUE), 1), 
+     " (", round(100*sd(roads_prop_highway_arterial, na.rm = TRUE), 1), ")"
+   ),
+   
+   `Mean Total Intersections by DA (SD)` = paste0(
+     round(mean(number_intersections, na.rm = TRUE), 1),
+     " (", round(sd(number_intersections, na.rm = TRUE), 1), ")"
+   ),
+   
+   `Bike Infrastructure Presence` = paste0(round(100*sum(any_bike_infra=="Yes")/n(), 1),"%"),
+   
+     `Mean VanDIX (SD)` = paste0(
+     round(mean(vandix_z, na.rm = TRUE), 1),
+     " (", round(sd(vandix_z, na.rm = TRUE), 1), ")"
+   )
+ ) %>%
+ bind_rows(total_row) %>%
+ arrange(match(Region, c("Total Study Area", unique(cma_da_tibble$region)))) %>%
+ flextable() %>% 
+ add_header_row(
+   values = c("", "Population Characteristics", "Built Environment and Road Network Characteristics", "Area Deprivation"),
+   colwidth = c(2, 5, 5, 1)
+ ) %>%
+ add_footer_lines(values = "DA = Dissemination Area; SD = Standard Deviation") %>%
+ set_caption("Table 1. Regional summary statistics for population characteristics, socioeconomic indicators and built environment characteristics by region. Values are presented as totals, means with standard deviations (SD), or prevalences where appropriate.") %>%
+ set_table_properties(layout = "autofit", width = 1) %>%
+ fontsize(size = 8, part = "all") %>%
+ padding(padding = 2, part = "all") %>%
+ theme_booktabs() %>%
+ fit_to_width(max_width = 15)
+
+table1
+```
+
+### Table 2 - Injury Crashes 
+
+```{r table 2}
+
+total_row <- cma_da_tibble %>%
+ summarise(
+   Region = "Total Study Area",
+      `Total Injury Crashes` = format(sum(n_casualty_claims), big.mark = ","),
 
     `Median Injury Crashes (IQR)` = paste0(
-      signif(median(n_casualty_claims), 3), 
+      signif(median(n_casualty_claims), 3),
       " (", signif(IQR(n_casualty_claims), 3), ")"
     ),
     `Injury Crashes == 0` = paste0(
       signif(100 * sum(n_casualty_claims == 0) / n(), 3), "%"
     ),
-    
+
     `Total Cycling Injury Crashes` = format(sum(n_cyclist_casualty_claims), big.mark = ","),
     `Cycling Injury Crashes == 0` = paste0(
       signif(100 * sum(n_cyclist_casualty_claims == 0) / n(), 3), "%"
     ),
-    
+
     `Median Cycling Injury Crashes (IQR)` = paste0(
-      signif(median(n_cyclist_casualty_claims), 3), 
+      signif(median(n_cyclist_casualty_claims), 3),
       " (", signif(IQR(n_cyclist_casualty_claims), 3), ")"
     ),
-    
+
     `Total Pedestrian Injury Crashes` = format(sum(n_pedestrian_casualty_claims), big.mark = ","),
-    
+
     `Median Pedestrian Injury Crashes (IQR)` = paste0(
-      signif(median(n_pedestrian_casualty_claims), 3), 
+      signif(median(n_pedestrian_casualty_claims), 3),
       " (", signif(IQR(n_pedestrian_casualty_claims), 3), ")"
     ),
-    
+
     `Pedestrian Injury Crashes == 0` = paste0(
       signif(100 * sum(n_pedestrian_casualty_claims == 0) / n(), 3), "%"
-    ),
-    
-    `Total Population` = format(sum(population, na.rm = TRUE), big.mark = ","),
-    
-    `Median Population (IQR)` = paste0(
-      signif(median(population, na.rm = TRUE), 3), 
-      " (", signif(IQR(population, na.rm = TRUE), 3), ")"
-    ),
-    
-        
-    `Median Average Household Income in 2020 (IQR)` = paste0(
-      format(signif(median(average_total_income_of_household_in_2020, na.rm = TRUE), 3),big.mark = ","),
-      " (", format(signif(IQR(average_total_income_of_household_in_2020, na.rm = TRUE), 3),big.mark = ","), ")"
-    ),
-    
-      `Median Proportion University Education (IQR)` = paste0(
-      signif(median(university_degree_prevalence, na.rm = TRUE), 3),
-      " (", signif(IQR(university_degree_prevalence, na.rm = TRUE), 3), ")"
-    ),
-    
-    
-    `Median Proportion  < Highschool Education (IQR)` = paste0(
-      signif(median(no_highschool_prevalence, na.rm = TRUE), 3),
-      " (", signif(IQR(no_highschool_prevalence, na.rm = TRUE), 3), ")"
-    ),
-    
-    `Median Proportion of Homeowners (IQR)` = paste0(
-      signif(median(home_owner_prevalence, na.rm = TRUE), 3),
-      " (", signif(IQR(home_owner_prevalence, na.rm = TRUE), 3), ")"
-    ),
-    
-    `Median Unemployment Rate (IQR)` = paste0(
-      signif(median(unemployment_rate, na.rm = TRUE), 3),
-      " (", signif(IQR(unemployment_rate, na.rm = TRUE), 3), ")"
-    ),
-
-    `Median Participation Rate (IQR)` = paste0(
-      signif(median(participation_rate, na.rm = TRUE), 3),
-      " (", signif(IQR(participation_rate, na.rm = TRUE), 3), ")"
-    ),
-    
-    `Median Proportion of Lone Parent Families (IQR)` = paste0(
-      signif(median(lone_parent_fam_prevalence, na.rm = TRUE), 3),
-      " (", signif(IQR(lone_parent_fam_prevalence, na.rm = TRUE), 3), ")"
-    ),
-    
-    `Total Lane Kilometres` = format(sum(total_lane_length_km, na.rm = TRUE), big.mark = ","),
-    
-        
-    `Median Lane Kilometres (IQR)` = paste0(
-      signif(median(total_lane_length_km, na.rm = TRUE), 3),
-      " (", signif(IQR(total_lane_length_km, na.rm = TRUE), 3), ")"
-    ),
-    
-    
-    `Median Proportion of Lane Kilometers Classified as Major (IQR)` = paste0(
-      signif(median(roads_prop_highway_arterial, na.rm = TRUE), 3), 
-      " (", signif(IQR(roads_prop_highway_arterial, na.rm = TRUE), 3), ")"
-    ),
-    
-    `Median Total Intersections (IQR)` = paste0(
-      signif(median(number_intersections, na.rm = TRUE), 3),
-      " (", signif(IQR(number_intersections, na.rm = TRUE), 3), ")"
-    ),
-    
-    
-    `Bike Infrastructure Presence` =   format(paste0(signif(sum(any_bike_infra=="Yes")/n()*100,3),"%"), big.mark = ","),
-    
-  ) %>%
-  pivot_longer(cols = everything(), names_to = "Variable", values_to = " ") %>% 
-  add_row("Variable" = "Injury Crashes",
-          " " = "Injury Crashes",
-          .after = 1) %>% 
-    add_row("Variable" = "Population Characteristics",
-                      " " = "Population Characteristics",
-
-            .after = 11) %>% 
-    add_row("Variable" = "Vancouver Area Deprivation Index Components",
-                                  " " =  "Vancouver Area Deprivation Index Components",
-
-            .after = 14) %>% 
-      add_row("Variable" = "Built Environment and Road Network Characteristics",
-              " " = "Built Environment and Road Network Characteristics",.after = 22) %>% 
-
-  
-  flextable() %>% 
-      add_footer_lines(values = "DA = Dissemination Area; IQR = Interquartile Range") %>% 
-  bold(part = "body",i = c(2,12,15,23),j=1) %>% 
-  merge_h(i = c(2,12,15,23)) %>%
-  set_caption("Table 1. Summary statistics for injury crashes, population characteristics, socioeconomic indicators and built environment characteristics across 6,225 Dissemination Areas. Values are presented as totals, medians with interquartile ranges (IQR), or prevalences where appropriate.") %>% 
-  autofit() %>% 
-theme_booktabs()
-
-
-table1
-
-
-```
-
-### Vancouver Area Deprivation Index
-
-
-```{r figure 2, fig.height=12.75591,fig.width=10.09843}
-table2_data <- cma_da_tibble %>%
-  mutate(
-    vandix_z_c = cut(
-      vandix_z,
-      breaks = c(-Inf, -1, 0, 1,Inf),  # Changed breaks to include all values
-      right = TRUE,
-      include.lowest = TRUE,
-      ordered_result = TRUE,
-      labels = c("< -1", "-1 to 0", "0 to 1", ">1")
     )
-  ) %>% 
-  group_by(vandix_z_c) %>%
-  mutate(
-    across(contains("prev"), ~ . * 100),
-    average_total_income_of_household_in_2020 = average_total_income_of_household_in_2020/1000
-  ) %>%
-  rename(
-    "VANDIX Z-Score" = vandix_z_c,
-    "No High School (%)" = no_highschool_prevalence,
-    "Unemployment Rate (%)" = unemployment_rate,
-    "Average Household Income ($1000s)" = average_total_income_of_household_in_2020,
-    "Labor Force Participation (%)" = participation_rate,
-    "University Degree (%)" = university_degree_prevalence,
-    "Single Parent Families (%)" = lone_parent_fam_prevalence,
-    "Home Ownership (%)" = home_owner_prevalence
-  ) %>%
-  select(
-    "VANDIX Z-Score",
-    "No High School (%)",
-    "Unemployment Rate (%)",
-    "University Degree (%)",
-    "Single Parent Families (%)",
-    "Average Household Income ($1000s)",
-    "Home Ownership (%)",
-    "Labor Force Participation (%)"
-  ) %>% 
-    summarizor(by = c("VANDIX Z-Score"))
+
+   )
 
 
 
 
-table2 <- table2_data %>%
-  as_flextable(spread_first_col = TRUE) %>%
-  bold(part = "body", i = seq(1, 28, by = 4)) %>%
-  set_caption(
-    "Table 2. Summary Statistics for each component of VanDIX score across one standard deviation change in the score."
-  ) %>%
-  autofit() %>%
-  theme_booktabs()
+# Main table
+table2 <- cma_da_tibble %>%  
+ rename(Region = region) %>% 
+ group_by(Region) %>%
+ summarise(
+      `Total Injury Crashes` = format(sum(n_casualty_claims), big.mark = ","),
+
+    `Median Injury Crashes (IQR)` = paste0(
+      signif(median(n_casualty_claims), 3),
+      " (", signif(IQR(n_casualty_claims), 3), ")"
+    ),
+    `Injury Crashes == 0` = paste0(
+      signif(100 * sum(n_casualty_claims == 0) / n(), 3), "%"
+    ),
+
+    `Total Cycling Injury Crashes` = format(sum(n_cyclist_casualty_claims), big.mark = ","),
+    `Cycling Injury Crashes == 0` = paste0(
+      signif(100 * sum(n_cyclist_casualty_claims == 0) / n(), 3), "%"
+    ),
+
+    `Median Cycling Injury Crashes (IQR)` = paste0(
+      signif(median(n_cyclist_casualty_claims), 3),
+      " (", signif(IQR(n_cyclist_casualty_claims), 3), ")"
+    ),
+
+    `Total Pedestrian Injury Crashes` = format(sum(n_pedestrian_casualty_claims), big.mark = ","),
+
+    `Median Pedestrian Injury Crashes (IQR)` = paste0(
+      signif(median(n_pedestrian_casualty_claims), 3),
+      " (", signif(IQR(n_pedestrian_casualty_claims), 3), ")"
+    ),
+
+    `Pedestrian Injury Crashes == 0` = paste0(
+      signif(100 * sum(n_pedestrian_casualty_claims == 0) / n(), 3), "%"
+    )
+ ) %>%
+ bind_rows(total_row) %>%
+ arrange(match(Region, c("Total Study Area", unique(cma_da_tibble$region)))) %>%
+ flextable() %>% 
+ add_header_row(
+   values = c("", "All", "Cyclist", "Pedestrian"),
+   colwidth = c(1, 3, 3, 3)
+ ) %>%
+ add_footer_lines(values = "DA = Dissemination Area; SD = Standard Deviation") %>%
+ set_caption("Table 2. Regional summary statistics for all injury crashes, cyclist involved injury crashes and pedestrian involved crashes.") %>%
+ set_table_properties(layout = "autofit", width = 1) %>%
+ fontsize(size = 8, part = "all") %>%
+ padding(padding = 2, part = "all") %>%
+ theme_booktabs() %>%
+ fit_to_width(max_width = 15)
 
 table2
-
- 
-vandix_distribution <-  cma_da_tibble %>%
-   mutate(
-     vandix_z_c = cut(
-       vandix_z,
-       breaks = c(-Inf, -1, 0, 1, Inf),
-       # Changed breaks to include all values
-       right = TRUE,
-       include.lowest = TRUE,
-       ordered_result = TRUE,
-       labels = c("< -1", "-1 to 0", "0 to 1", ">1")
-     )
-   ) %>%
-   group_by(vandix_z_c) %>%
-   mutate(across(contains("prev"), ~ . * 100),
-          average_total_income_of_household_in_2020 = average_total_income_of_household_in_2020 /
-            10000) %>%
-   rename(
-     "VanDIX Z-Score" = vandix_z_c,
-     "No High School (%)" = no_highschool_prevalence,
-     "Unemployment Rate (%)" = unemployment_rate,
-     "Average Household Income ($10k)" = average_total_income_of_household_in_2020,
-     "Labor Force Participation (%)" = participation_rate,
-     "University Degree (%)" = university_degree_prevalence,
-     "Single Parent Families (%)" = lone_parent_fam_prevalence,
-     "Home Ownership (%)" = home_owner_prevalence
-   ) %>%
-   select(
-     "VanDIX Z-Score",
-     "No High School (%)",
-     "Unemployment Rate (%)",
-     "University Degree (%)",
-     "Single Parent Families (%)",
-     "Average Household Income ($10k)",
-     "Home Ownership (%)",
-     "Labor Force Participation (%)"
-   ) %>%
-   pivot_longer(cols = contains("%") | contains("$")) %>%
-   mutate(name = factor(
-     name,
-     levels = c(
-       "No High School (%)",
-       "Unemployment Rate (%)",
-       "University Degree (%)",
-       "Single Parent Families (%)",
-       "Average Household Income ($10k)",
-       "Home Ownership (%)",
-       "Labor Force Participation (%)"
-     )
-   )) %>%
-   group_by(`VanDIX Z-Score`, name) %>%
-   ggplot(aes(y = `VanDIX Z-Score`, x = value, fill = factor(stat(quantile)))) +
-   stat_density_ridges(
-     geom = "density_ridges_gradient",
-     calc_ecdf = TRUE,
-     quantiles = 4,
-     quantile_lines = TRUE,
-     rel_min_height = 0.01,
-      scale = 2,
-   ) +
-   scale_fill_carto_d(name = "Quartiles", palette = "Geyser") + 
-   facet_wrap(~ name, scales = "free_x", ncol = 1) +
-   theme_ipsum_es(axis_title_size = 12,
-                              grid = "XxYy",
-                              ticks = TRUE) +
-     theme(panel.spacing = unit(0.001, "lines")) +
-   ylab("VanDIX Score (Higher = Greater Deprivation)") +
-   xlab("Value") +
-   xlim(0, 100)
- 
- ggsave(device = "svg",
-  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/vandix_components_distribution.svg",
-  plot = vandix_distribution,
-  units = "mm",
-  height = 240*1.35,
-  width = 190*1.35)
-
- 
-ggsave(device = "jpg",
-  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/vandix_components_distribution.jpg",
-  plot = vandix_distribution,
-  units = "mm",
-  height = 240*1.35,
-  width = 190*1.35,
-  dpi = 600)
-
-
- vandix_distribution
 ```
-           
-
-## Socioeconomic Status and Crash Injury Incidence
-
-### Adjusted Relationships
 
 
-#### All Injury Crashes
+## Road Traffic Injury Inequality
+
+### Table 3 - Incidence Rate Ratios for All Injury Crashes
 
 ```{r table 3,fig.width=190/25.4,fig.height=240/25.4}
 
@@ -1980,7 +2003,7 @@ all_irr_fp
 ```
 
 
-#### Cyclist Involved Injury Crashes
+### Table 4 - Incidence Rate Ratios for Cyclist Involved Injury Crashes
 
 
 ```{r table 4,fig.width=190/25.4,fig.height=240/25.4}
@@ -2028,7 +2051,7 @@ ggsave(device = "jpg",
 cyclist_irr_fp
 ```
 
-#### Pedestrian Involved Injury Crashes
+### Table 5 - Incidence Rate Ratios for Pedestrian Involved Injury Crashes
 
 ```{r table 5,fig.width=190/25.4,fig.height=240/25.4}
 
@@ -2144,28 +2167,43 @@ all_modes
 ```
 
 
-
 ```{r tables}
 
 # Create a new Word document
 doc_t <- read_docx(path = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Tables/tables_template.docx")
 
 doc_t <- doc_t %>%
-  body_add_flextable(value = table1) %>%
-  body_end_section_portrait() %>%
+  body_add_flextable(value = table1) %>%body_add_par(value = "") %>%  # Adds an empty paragraph for spacing
+  body_add_par(value = "") %>%  # Adding multiple paragraphs increases the space
+  body_add_break() %>%
   body_add_flextable(value = table2) %>%
+  body_add_par(value = "") %>%  # Adds an empty paragraph for spacing
+  body_add_par(value = "") %>%  # Adding multiple paragraphs increases the space
+  body_add_break() %>%
   body_add_flextable(value = vandix_irr_all_crashes_models) %>%
+  body_add_par(value = "") %>%  # Adds an empty paragraph for spacing
+  body_add_par(value = "") %>%  # Adding multiple paragraphs increases the space
+  body_add_break() %>%
   body_add_flextable(value = vandix_irr_cyclist_crashes_models) %>%
+  body_add_par(value = "") %>%  # Adds an empty paragraph for spacing
+  body_add_par(value = "") %>%  # Adding multiple paragraphs increases the space
+  body_add_break() %>%
   body_add_flextable(value = vandix_irr_pedestrian_crashes_models) %>%
   body_end_section_landscape()
 
 
+  
 # Save the document
-print(doc_t, target = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Tables/Tables.docx")
+print(doc_t, target = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Tables/Tables Raw.docx")
+
+
+
 
 
 
 ```
+
+
 
 
 
@@ -2917,9 +2955,155 @@ saveWidget(
 
 
 # Supplementary Material 2
+### Figure 1 - VanDIX Ridgeline
 
 
-## Model Comparison of Fit Metrics
+```{r figure 2, fig.height=12.75591,fig.width=10.09843}
+table2_data <- cma_da_tibble %>%
+  mutate(
+    vandix_z_c = cut(
+      vandix_z,
+      breaks = c(-Inf, -1, 0, 1,Inf),  # Changed breaks to include all values
+      right = TRUE,
+      include.lowest = TRUE,
+      ordered_result = TRUE,
+      labels = c("< -1", "-1 to 0", "0 to 1", ">1")
+    )
+  ) %>% 
+  group_by(vandix_z_c) %>%
+  mutate(
+    across(contains("prev"), ~ . * 100),
+    average_total_income_of_household_in_2020 = average_total_income_of_household_in_2020/1000
+  ) %>%
+  rename(
+    "VANDIX Z-Score" = vandix_z_c,
+    "No High School (%)" = no_highschool_prevalence,
+    "Unemployment Rate (%)" = unemployment_rate,
+    "Average Household Income ($1000s)" = average_total_income_of_household_in_2020,
+    "Labor Force Participation (%)" = participation_rate,
+    "University Degree (%)" = university_degree_prevalence,
+    "Single Parent Families (%)" = lone_parent_fam_prevalence,
+    "Home Ownership (%)" = home_owner_prevalence
+  ) %>%
+  select(
+    "VANDIX Z-Score",
+    "No High School (%)",
+    "Unemployment Rate (%)",
+    "University Degree (%)",
+    "Single Parent Families (%)",
+    "Average Household Income ($1000s)",
+    "Home Ownership (%)",
+    "Labor Force Participation (%)"
+  ) %>% 
+    summarizor(by = c("VANDIX Z-Score"))
+
+
+
+
+table2 <- table2_data %>%
+  as_flextable(spread_first_col = TRUE) %>%
+  bold(part = "body", i = seq(1, 28, by = 4)) %>%
+  set_caption(
+    "Table 2. Summary Statistics for each component of VanDIX score across one standard deviation change in the score."
+  ) %>%
+  autofit() %>%
+  theme_booktabs()
+
+table2
+
+ 
+vandix_distribution <-  cma_da_tibble %>%
+   mutate(
+     vandix_z_c = cut(
+       vandix_z,
+       breaks = c(-Inf, -1, 0, 1, Inf),
+       # Changed breaks to include all values
+       right = TRUE,
+       include.lowest = TRUE,
+       ordered_result = TRUE,
+       labels = c("< -1", "-1 to 0", "0 to 1", ">1")
+     )
+   ) %>%
+   group_by(vandix_z_c) %>%
+   mutate(across(contains("prev"), ~ . * 100),
+          average_total_income_of_household_in_2020 = average_total_income_of_household_in_2020 /
+            10000) %>%
+   rename(
+     "VanDIX Z-Score" = vandix_z_c,
+     "No High School (%)" = no_highschool_prevalence,
+     "Unemployment Rate (%)" = unemployment_rate,
+     "Average Household Income ($10k)" = average_total_income_of_household_in_2020,
+     "Labor Force Participation (%)" = participation_rate,
+     "University Degree (%)" = university_degree_prevalence,
+     "Single Parent Families (%)" = lone_parent_fam_prevalence,
+     "Home Ownership (%)" = home_owner_prevalence
+   ) %>%
+   select(
+     "VanDIX Z-Score",
+     "No High School (%)",
+     "Unemployment Rate (%)",
+     "University Degree (%)",
+     "Single Parent Families (%)",
+     "Average Household Income ($10k)",
+     "Home Ownership (%)",
+     "Labor Force Participation (%)"
+   ) %>%
+   pivot_longer(cols = contains("%") | contains("$")) %>%
+   mutate(name = factor(
+     name,
+     levels = c(
+       "No High School (%)",
+       "Unemployment Rate (%)",
+       "University Degree (%)",
+       "Single Parent Families (%)",
+       "Average Household Income ($10k)",
+       "Home Ownership (%)",
+       "Labor Force Participation (%)"
+     )
+   )) %>%
+   group_by(`VanDIX Z-Score`, name) %>%
+   ggplot(aes(y = `VanDIX Z-Score`, x = value, fill = factor(stat(quantile)))) +
+   stat_density_ridges(
+     geom = "density_ridges_gradient",
+     calc_ecdf = TRUE,
+     quantiles = 4,
+     quantile_lines = TRUE,
+     rel_min_height = 0.01,
+      scale = 2,
+   ) +
+   scale_fill_carto_d(name = "Quartiles", palette = "Geyser") + 
+   facet_wrap(~ name, scales = "free_x", ncol = 1) +
+   theme_ipsum_es(axis_title_size = 12,
+                              grid = "XxYy",
+                              ticks = TRUE) +
+     theme(panel.spacing = unit(0.001, "lines")) +
+   ylab("VanDIX Score (Higher = Greater Deprivation)") +
+   xlab("Value") +
+   xlim(0, 100)
+ 
+ ggsave(device = "svg",
+  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/vandix_components_distribution.svg",
+  plot = vandix_distribution,
+  units = "mm",
+  height = 240*1.35,
+  width = 190*1.35)
+
+ 
+ggsave(device = "jpg",
+  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/vandix_components_distribution.jpg",
+  plot = vandix_distribution,
+  units = "mm",
+  height = 240*1.35,
+  width = 190*1.35,
+  dpi = 600)
+
+
+ vandix_distribution
+```
+           
+
+
+## Table 1 - Model Comparison of Fit Metrics
 
 ```{r waic vs dic}
 
@@ -3021,9 +3205,7 @@ st1
 ```
 
 
-## Model Full Details
-
-### All Injury Crashes
+### Table 2 - All Injury Crashes
 
 ```{r model details all}
 
@@ -3032,7 +3214,7 @@ st2 <- all_crashes_full_model_details %>%
   add_row(term = "Hyper Parameters", .before = 39) %>%
   add_row(term = "Model Fit", .before = 42) %>%
   select(-parameter_type) %>%
-  mutate(across(where(is.numeric), ~ round(., 4))) %>%
+  mutate(across(where(is.numeric), ~ round(., 3))) %>%
   flextable() %>%
   hline(i = c(1, 38, 39, 41, 42), part = "body") %>%
   set_header_labels(values = c("Term", rep(
@@ -3073,7 +3255,7 @@ st2
 
 ```
 
-### Cyclist Involved Injury Crashes
+### Table 3 -  Cyclist Involved Injury Crashes
 
 ```{r model details cyclist}
 
@@ -3082,7 +3264,7 @@ st3 <- cyclist_crashes_full_model_details %>%
   add_row(term = "Hyper Parameters", .before = 39) %>%
   add_row(term = "Model Fit", .before = 43) %>%
   select(-parameter_type) %>%
-  mutate(across(where(is.numeric), ~ round(., 4))) %>%
+  mutate(across(where(is.numeric), ~ round(., 3))) %>%
   flextable() %>%
   hline(i = c(1, 38, 39, 42, 43), part = "body") %>%
   set_header_labels(values = c("Term", rep(
@@ -3122,7 +3304,7 @@ st3
 
 ```
 
-### Pedestrian Involved Injury Crashes
+### Table 4 - Pedestrian Involved Injury Crashes
 
 ```{r model details pedestrian}
 
@@ -3131,7 +3313,7 @@ st4 <- pedestrian_crashes_full_model_details %>%
   add_row(term = "Hyper Parameters", .before = 39) %>%
   add_row(term = "Model Fit", .before = 43) %>%
   select(-parameter_type) %>%
-  mutate(across(where(is.numeric), ~ round(., 4))) %>%
+  mutate(across(where(is.numeric), ~ round(., 3))) %>%
   flextable() %>%
   hline(i = c(1, 38, 39, 42, 43), part = "body") %>%
   set_header_labels(values = c("Term", rep(
@@ -3167,19 +3349,37 @@ st4 <- pedestrian_crashes_full_model_details %>%
   ) %>%
   fontsize(size = 9)
 st4
+```
 
+
+```{r}
 doc_sm2 <- doc_sm2 %>%
+    body_add_gg(value = vandix_distribution,
+                height = 9.45,
+                width = 7.48,
+                res = 300) %>%
+    body_end_section_portrait() %>% 
   body_add_flextable(value = st1) %>%
+  body_add_par(value = "") %>%  # Adds an empty paragraph for spacing
+  body_add_par(value = "") %>%  # Adding multiple paragraphs increases the space
   body_add_break() %>%
+  
   body_add_flextable(value = st2) %>%
+  body_add_par(value = "") %>%
+  body_add_par(value = "") %>%
   body_add_break() %>%
+  
   body_add_flextable(value = st3) %>%
+  body_add_par(value = "") %>%
+  body_add_par(value = "") %>%
   body_add_break() %>%
+  
   body_add_flextable(value = st4) %>%
+  body_add_par(value = "") %>%
+  body_add_par(value = "") %>% 
   body_end_section_landscape()
-
 # Save the document
-print(doc_sm2, target = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Supplementary Material/Supplementary Material 2.docx")
+print(doc_sm2, target = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Supplementary Material/Supplementary Material 2 - raw.docx")
 
 ```
 

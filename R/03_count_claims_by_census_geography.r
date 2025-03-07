@@ -27,7 +27,8 @@ da_buff <-
 # Load insurance claims data
 claims <-
   claims <- read_csv(file = paste0(wd, "/Data/icbc_reported_crashes_2019_2023.csv")) %>%
-  filter(!is.na(Latitude)) %>%           # Remove rows where Latitude is missing
+  filter(!is.na(Latitude)) %>% # Remove rows where Latitude is missing
+  uncount(`Total Crashes`) %>% 
   mutate(id = row_number()) %>%          # Add a unique ID for each row
   select(id, `Cyclist Flag`, `Pedestrian Flag`, `Crash Severity`, Longitude, Latitude)
 # 'claims' now contains cleaned and selected columns from the insurance claims data.
@@ -89,4 +90,4 @@ bc_da <- bc_da %>%
   )  # Replace any NA values with 0
 
 # Save the updated census data with crash statistics to a new file
-st_write(bc_da, dsn = paste0(wd, "/Processed Data/da_v3_2021.gpkg"))
+st_write(bc_da, dsn = paste0(wd, "/Processed Data/da_v3_2021b.gpkg"))
