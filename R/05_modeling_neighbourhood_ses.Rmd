@@ -957,7 +957,7 @@ vandix_irr_all_crashes_models <- left_join(all_vandix_irr_unadjusted,
   set_table_properties(layout = "autofit") %>%
   valign(valign = "bottom", part = "header") %>%
   set_caption(
-    "Table 4. Incidence Rate Ratios (IRR) with 95% Credible Intervals for motor vehicle crashes in relation to a standard deviation increase in deprivation, measured by the Vancouver Area Deprivation Index (VanDIX). Results are shown for different statistical models including unadjusted, minimally adjusted and adjusted."
+    "Table 3. Incidence Rate Ratios (IRR) with 95% Credible Intervals for all motor vehicle crashes in relation to a standard deviation increase in deprivation, measured by the Vancouver Area Deprivation Index (VanDIX). Results are shown for different statistical models including unadjusted, minimally adjusted and adjusted."
   )
 
 
@@ -1221,7 +1221,7 @@ vandix_irr_cyclist_crashes_models <- left_join(cyclist_vandix_irr_unadjusted,
   set_table_properties(layout = "autofit") %>%
   valign(valign = "bottom", part = "header") %>%
   set_caption(
-    "Table 4. Incidence Rate Ratios (IRR) with 95% Credible Intervals for motor vehicle crashes in relation to a standard deviation increase in deprivation, measured by the Vancouver Area Deprivation Index (VanDIX). Results are shown for different statistical models including unadjusted, minimally adjusted and adjusted."
+    "Table 4. Incidence Rate Ratios (IRR) with 95% Credible Intervals for cyclist- motor vehicle crashes in relation to a standard deviation increase in deprivation, measured by the Vancouver Area Deprivation Index (VanDIX). Results are shown for different statistical models including unadjusted, minimally adjusted and adjusted."
   )
 
 
@@ -1497,8 +1497,13 @@ vandix_irr_pedestrian_crashes_models <- left_join(pedestrian_vandix_irr_unadjust
   set_table_properties(layout = "autofit") %>%
   valign(valign = "bottom", part = "header") %>%
   set_caption(
-    "Table 4. Incidence Rate Ratios (IRR) with 95% Credible Intervals for motor vehicle crashes in relation to a standard deviation increase in deprivation, measured by the Vancouver Area Deprivation Index (VanDIX). Results are shown for different statistical models including unadjusted, minimally adjusted and adjusted."
+    "Table 5. Incidence Rate Ratios (IRR) with 95% Credible Intervals for pedestrian-motor vehicle crashes in relation to a standard deviation increase in deprivation, measured by the Vancouver Area Deprivation Index (VanDIX). Results are shown for different statistical models including unadjusted, minimally adjusted and adjusted."
   )
+
+n <- nrow(cma_da)
+cma_da$re_all_adjusted <-  rnorm(n, mean = 1, sd = 1)
+cma_da$re_cyclist_adjusted <-   rnorm(n, mean = 1, sd = 1)
+cma_da$re_pedestrian_adjusted <-   rnorm(n, mean = 1, sd = 1)
 
 cma_da$re_all_adjusted <-  m5_all$summary.random$ui[1:nrow(cma_da), "mean"]
 cma_da$re_cyclist_adjusted <-  m5_cyclist_zip$summary.random$ui[1:nrow(cma_da), "mean"]
@@ -1723,12 +1728,12 @@ augment(cluster,regions_data) %>%
 regions_data$Cluster <- cluster$cluster
 
 # Visualize the clusters
-ggplot(regions_data, aes(x = log(total_lane_length_km) , y = log(total_population), color = factor(Cluster), label = region)) +
-  geom_point(size = 4) +
-  ggrepel::geom_text_repel(point.padding = 0.5,size = 4,max.overlaps = 10000) +
-  labs(title = "Regional Clusters",
-       color = "Cluster") +
-  theme_minimal()
+# ggplot(regions_data, aes(x = log(total_lane_length_km) , y = log(total_population), color = factor(Cluster), label = region)) +
+#   geom_point(size = 4) +
+#   ggrepel::geom_text_repel(point.padding = 0.5,size = 4,max.overlaps = 10000) +
+#   labs(title = "Regional Clusters",
+#        color = "Cluster") +
+#   theme_minimal()
 
 
 region <- cma_da_tibble %>% 
@@ -1749,44 +1754,43 @@ region <- cma_da_tibble %>%
             ) %>% 
   ungroup()
 
-region %>% 
-  group_by(name) %>% 
-  summarise(total_population = sum(population),
-            min_population = min(population),
-            max_population = max(population),
-            
-            total_lane_kilometres = sum(lane_kilometres),
-            min_lane_kilometres = min(lane_kilometres),
-            max_lane_kilometres = max(lane_kilometres),
-            
-            total_landarea = sum(landarea),
-            min_landarea = min(landarea),
-            max_landarea = max(landarea),
-            
-            total_n_casualty_claims = sum(n_casualty_claims),
-            min_n_casualty_claims = min(n_casualty_claims),
-            max_n_casualty_claims = max(n_casualty_claims),
-            
-           total_n_cyclist_casualty_claims = sum(n_cyclist_casualty_claims),
-            min_n_cyclist_casualty_claims = min(n_cyclist_casualty_claims),
-            max_n_cyclist_casualty_claims = max(n_cyclist_casualty_claims),
-            
-                       
-           total_n_pedestrian_casualty_claims = sum(n_pedestrian_casualty_claims),
-            min_n_pedestrian_casualty_claims = min(n_pedestrian_casualty_claims),
-            max_n_pedestrian_casualty_claims = max(n_pedestrian_casualty_claims),
-           
-  ) %>% 
-  mutate(total_population_p = total_population/sum(total_population)*100,
-         total_lane_kilometres_p = total_lane_kilometres/sum(total_lane_kilometres)*100,
-                  total_landarea_p = total_landarea/sum(total_landarea)*100,
-         total_n_casualty_claims_p = total_n_casualty_claims/sum(total_n_casualty_claims)*100,
-         total_n_cyclist_casualty_claims_p = total_n_cyclist_casualty_claims/sum(total_n_cyclist_casualty_claims)*100,
-         total_n_pedestrian_casualty_claims_p = total_n_pedestrian_casualty_claims/sum(total_n_cyclist_casualty_claims)*100
-
-         
-  ) %>% 
-  View()
+# region %>% 
+#   group_by(name) %>% 
+#   summarise(total_population = sum(population),
+#             min_population = min(population),
+#             max_population = max(population),
+#             
+#             total_lane_kilometres = sum(lane_kilometres),
+#             min_lane_kilometres = min(lane_kilometres),
+#             max_lane_kilometres = max(lane_kilometres),
+#             
+#             total_landarea = sum(landarea),
+#             min_landarea = min(landarea),
+#             max_landarea = max(landarea),
+#             
+#             total_n_casualty_claims = sum(n_casualty_claims),
+#             min_n_casualty_claims = min(n_casualty_claims),
+#             max_n_casualty_claims = max(n_casualty_claims),
+#             
+#            total_n_cyclist_casualty_claims = sum(n_cyclist_casualty_claims),
+#             min_n_cyclist_casualty_claims = min(n_cyclist_casualty_claims),
+#             max_n_cyclist_casualty_claims = max(n_cyclist_casualty_claims),
+#             
+#                        
+#            total_n_pedestrian_casualty_claims = sum(n_pedestrian_casualty_claims),
+#             min_n_pedestrian_casualty_claims = min(n_pedestrian_casualty_claims),
+#             max_n_pedestrian_casualty_claims = max(n_pedestrian_casualty_claims),
+#            
+#   ) %>% 
+#   mutate(total_population_p = total_population/sum(total_population)*100,
+#          total_lane_kilometres_p = total_lane_kilometres/sum(total_lane_kilometres)*100,
+#                   total_landarea_p = total_landarea/sum(total_landarea)*100,
+#          total_n_casualty_claims_p = total_n_casualty_claims/sum(total_n_casualty_claims)*100,
+#          total_n_cyclist_casualty_claims_p = total_n_cyclist_casualty_claims/sum(total_n_cyclist_casualty_claims)*100,
+#          total_n_pedestrian_casualty_claims_p = total_n_pedestrian_casualty_claims/sum(total_n_cyclist_casualty_claims)*100
+# 
+#          
+#   ) 
 
 
 
@@ -1911,6 +1915,13 @@ table1 <- cma_da_tibble %>%
  theme_booktabs() %>%
  fit_to_width(max_width = 15)
 
+
+table1
+save_as_image(table1 %>% autofit(), "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Tables/regional_injury_be_descriptive.svg", expand = 1, res = 150)
+
+
+table1
+
 table1
 ```
 
@@ -2008,6 +2019,11 @@ table2 <- cma_da_tibble %>%
  theme_booktabs() %>%
  fit_to_width(max_width = 15)
 
+
+table2
+save_as_image(table2 %>% autofit(), "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Tables/regional_injury_crashes_descriptive.svg", expand = 1, res = 150)
+
+
 table2
 ```
 
@@ -2059,6 +2075,7 @@ ggsave(device = "jpg",
   height = 190*1.25,
   width = 140*1.25,
   dpi = 600)
+
 all_irr_fp
 ```
 
@@ -2156,38 +2173,32 @@ ggsave(device = "jpg",
 pedestrian_irr_fp 
 
 
-
-
-```
-
-```{r}
-
-
-a <- all_vandix_irr_adjusted %>% 
-  mutate(mode = "All")
-
-p <- pedestrian_vandix_irr_adjusted %>% 
-  mutate(mode = "Pedestrian")
-
-
-
-c <- cyclist_vandix_irr_adjusted %>% 
-  mutate(mode = "Cyclist") 
-
-bind_rows(a, p) %>%
-  bind_rows(c) %>%
-  group_by(region) %>%
-  
-  mutate(
-    Region = factor(region, levels = region_levels), pc = irr_mean /
-      irr_mean[1]) %>%
-  select(Region, mode, `IRR (95% CI)`, pc) %>%
-    arrange(Region, mode) %>%
-  print(n = 100)
+# 
+# 
+# a <- all_vandix_irr_adjusted %>% 
+#   mutate(mode = "All")
+# 
+# p <- pedestrian_vandix_irr_adjusted %>% 
+#   mutate(mode = "Pedestrian")
+# 
+# 
+# 
+# c <- cyclist_vandix_irr_adjusted %>% 
+#   mutate(mode = "Cyclist") 
+# 
+# bind_rows(a, p) %>%
+#   bind_rows(c) %>%
+#   group_by(region) %>%
+#   
+#   mutate(
+#     Region = factor(region, levels = region_levels), pc = irr_mean /
+#       irr_mean[1]) %>%
+#   select(Region, mode, `IRR (95% CI)`, pc) %>%
+#     arrange(Region, mode) %>%
+#   print(n = 100)
 
 ```
-         
-         
+
 ```{r,fig.width=190/25.4,fig.height=240/25.4}
 
 
@@ -2496,7 +2507,7 @@ captions <- c(
   "Total Lane Kilometres",
   "Proportion of Total Lane Kilometres classified as Arterial or Highway",
   "Number of Intersections",
-  "Presence of Bike Infrastructure within 500m of dissemination area centroid from Canadian Bikeway Comfort and Safety Classification (CanBICS)",
+  "Presence of Bike Infrastructure from Canadian Bikeway Comfort and Safety Classification (CanBICS)",
   "Population",
   "Adjusted Model BYM2 Random Effect for Injury Crashes",
   "Adjusted Model BYM2 Random Effect for Cyclist Involved Injury Crashes",
@@ -2636,6 +2647,9 @@ main()
 ### Interactive Map
 
 ```{r dynamic map}
+
+library(htmltools)  # For HTML() function
+
 regions <- cma_da %>%
   group_by(region_name) %>%
   summarise(n = n())
@@ -2643,8 +2657,10 @@ regions <- cma_da %>%
 
 nb_colours <- 16
 colour_pal <- colorRampPalette(carto_pal(12, "Antique"))(nb_colours)
+dark2_pal <- RColorBrewer::brewer.pal(8,name = "Dark2")[c(8,1)]
 
 create_interactive_map <- function(cma_da) {
+
   # Transform to WGS84 for leaflet
   cma_da_wgs84 <- st_transform(cma_da, 4326)
   regions_wgs84 <- st_transform(regions, 4326)
@@ -2659,6 +2675,7 @@ create_interactive_map <- function(cma_da) {
   pal_built_env <- colorNumeric(palette = "YlGnBu",
                                 domain = NULL,
                                 na.color = "transparent")
+  
   
   # VanDIX - Diverging RdBu scheme with standard deviation breaks
   pal_vandix <- colorBin(
@@ -2699,9 +2716,37 @@ create_interactive_map <- function(cma_da) {
     na.color = "transparent"
   )
   
+  # Create layer descriptions
+  layer_descriptions <- list(
+    "Region" = "Distinct spatially contiguous region within the study area. Each color represents a different administrative zone.",
+    "Population" = "Total resident population in each dissemination area based on 2021 Canadian census.",
+    "All Injury Crashes" = "Total motor vehicle injury crashes captured by auto-insurance data (2019-2023).",
+    "Cyclist Injury Crashes" = "Total bicycle-motor vehicle injury crashes captured by auto-insurance data (2019-2023).",
+    "Pedestrian Injury Crashes" = "Total pedestrian-motor vehicle injury crashes captured by auto-insurance data (2019-2023)",
+    "VanDIX" = "Vancouver Area Deprivation Index (z-scores). Higher values (red) indicate higher levels of socioeconomic deprivation.",
+    "Lane Length" = "Total road lane length in kilometers within each dissemination area.",
+    "Major Roads" = "Proportion of major road lanes (highways/freeways and arterials) as a percentage of total lane length.",
+    "Intersections" = "Number of intersections within each dissemination area",
+    "Cycling Infrastructure" = "Presence or absence of bicycling specific infrastructure derived from The OpenStreetMap based Canadian Bikeway Comfort and Safety (Can-BICS) Classification System.",
+    "BYM2 Random Effect - All Injuries" = "Modified Besag-York-Mollie (BYM2) random effect is the sum of spatial and unstructured random effects on log scale. Values greater than 0 indicate neighbourhoods with more injury crashes than expected after adjusting for explanatory variables in the adjusted model; values less than 0 indicate fewer crashes than expected.",
+    "BYM2 Random Effect - Cyclists" = "Modified Besag-York-Mollie (BYM2) random effect is the sum of spatial and unstructured random effects on log scale. Values greater than 0 indicate neighbourhoods with more injury crashes than expected after adjusting for explanatory variables in the adjusted model; values less than 0 indicate fewer crashes than expected.",
+    "BYM2 Random Effect - Pedestrians" = "Modified Besag-York-Mollie (BYM2) random effect is the sum of spatial and unstructured random effects on log scale. Values greater than 0 indicate neighbourhoods with more injury crashes than expected after adjusting for explanatory variables in the adjusted model; values less than 0 indicate fewer crashes than expected."
+  )
+  
+  # Function to create HTML title with description
+  create_title_with_desc <- function(layer_name) {
+    return(paste0(
+      "<strong>", layer_name, "</strong>",
+      "<br><span style='font-size: 0.85em; font-weight: normal;'>", 
+      layer_descriptions[[layer_name]], 
+      "</span>"
+    ))
+  }
+  
   # Create color palette function for regions
   pal_region <- colorFactor(palette = colour_pal, domain = cma_da_wgs84$region)
-  
+  pal_cycling_infrastructure <- colorFactor(palette = dark2_pal, domain = cma_da_wgs84$bike_infra_cat)
+
   # Create base map
   m <- leaflet(cma_da_wgs84) %>%
     # Add base tiles
@@ -2723,10 +2768,8 @@ create_interactive_map <- function(cma_da) {
     addLegend(
       position = "bottomright",
       pal = pal_region,
-      # Changed from pal_pop to pal_region
       values = ~ region,
-      # Changed from ~pal_region to ~region
-      title = "Region",
+      title = HTML(create_title_with_desc("Region")),
       opacity = 0.9,
       group = "Region"
     )
@@ -2754,7 +2797,7 @@ create_interactive_map <- function(cma_da) {
       position = "bottomright",
       pal = pal_pop,
       values = ~ population_100 * 100,
-      title = "Population",
+      title = HTML(create_title_with_desc("Population")),
       opacity = 0.7,
       group = "Population",
       labFormat = labelFormat(big.mark = ",")
@@ -2779,7 +2822,7 @@ create_interactive_map <- function(cma_da) {
       position = "bottomright",
       pal = pal_crashes,
       values = ~ n_casualty_claims,
-      title = "All Injury Crashes",
+      title = HTML(create_title_with_desc("All Injury Crashes")),
       opacity = 0.7,
       group = "All Injury Crashes"
     ) %>%
@@ -2800,7 +2843,7 @@ create_interactive_map <- function(cma_da) {
       position = "bottomright",
       pal = pal_crashes,
       values = ~ n_cyclist_casualty_claims,
-      title = "Cyclist Crashes",
+      title = HTML(create_title_with_desc("Cyclist Injury Crashes")),
       opacity = 0.7,
       group = "Cyclist Injury Crashes"
     ) %>%
@@ -2821,7 +2864,7 @@ create_interactive_map <- function(cma_da) {
       position = "bottomright",
       pal = pal_crashes,
       values = ~ n_pedestrian_casualty_claims,
-      title = "Pedestrian Crashes",
+      title = HTML(create_title_with_desc("Pedestrian Injury Crashes")),
       opacity = 0.7,
       group = "Pedestrian Injury Crashes"
     )
@@ -2842,7 +2885,7 @@ create_interactive_map <- function(cma_da) {
       position = "bottomright",
       pal = pal_vandix,
       values = ~ vandix_z,
-      title = "VanDIX Score (sd)",
+      title = HTML(create_title_with_desc("VanDIX")),
       opacity = 0.7,
       group = "VanDIX"
     ) %>%
@@ -2863,7 +2906,7 @@ create_interactive_map <- function(cma_da) {
       position = "bottomright",
       pal = pal_built_env,
       values = ~ total_lane_length_km,
-      title = "Lane Length (km)",
+      title = HTML(create_title_with_desc("Lane Length")),
       opacity = 0.7,
       group = "Lane Length"
     ) %>%
@@ -2885,7 +2928,7 @@ create_interactive_map <- function(cma_da) {
       position = "bottomright",
       pal = pal_built_env,
       values = ~ roads_prop_highway_arterial,
-      title = "Major Roads (%)",
+      title = HTML(create_title_with_desc("Major Roads")),
       opacity = 0.7,
       group = "Major Roads"
     ) %>%
@@ -2903,9 +2946,31 @@ create_interactive_map <- function(cma_da) {
       position = "bottomright",
       pal = pal_built_env,
       values = ~ number_intersections,
-      title = "Number of Intersections",
+      title = HTML(create_title_with_desc("Intersections")),
       opacity = 0.7,
       group = "Intersections"
+    ) 
+  
+  
+  m <- m %>% 
+     addPolygons(
+      fillColor = ~ pal_cycling_infrastructure(bike_infra_cat),
+      weight = 0.5,
+      opacity = 1,
+      color = pal_cycling_infrastructure,
+      fillOpacity = 0.7,
+      popup = ~ paste0("Cycling Infrastructure: ", bike_infra_cat),
+      # Added region value to popup
+      group = "Cycling Infrastructure"
+    ) %>%
+    # Add legend
+    addLegend(
+      position = "bottomright",
+      pal = pal_cycling_infrastructure,
+      values = ~ bike_infra_cat,
+      title = HTML(create_title_with_desc("Cycling Infrastructure")),
+      opacity = 0.9,
+      group ="Cycling Infrastructure"
     )
   
   # 3. BYM2 Model Results
@@ -2931,7 +2996,7 @@ create_interactive_map <- function(cma_da) {
       position = "bottomright",
       pal = pal_bym2,
       values = ~ re_all_adjusted,
-      title = "BYM2 Random Effect<br>(All Injuries)",
+      title = HTML(create_title_with_desc("BYM2 Random Effect - All Injuries")),
       opacity = 0.7,
       group = "BYM2 Random Effect - All Injuries"
     ) %>%
@@ -2956,7 +3021,7 @@ create_interactive_map <- function(cma_da) {
       position = "bottomright",
       pal = pal_bym2,
       values = ~ re_cyclist_adjusted,
-      title = "BYM2 Random Effect<br>(Cyclist Injuries)",
+      title = HTML(create_title_with_desc("BYM2 Random Effect - Cyclists")),
       opacity = 0.7,
       group = "BYM2 Random Effect - Cyclists"
     ) %>%
@@ -2981,7 +3046,7 @@ create_interactive_map <- function(cma_da) {
       position = "bottomright",
       pal = pal_bym2,
       values = ~ re_pedestrian_adjusted,
-      title = "BYM2 Random Effect<br>(Pedestrian Injuries)",
+      title = HTML(create_title_with_desc("BYM2 Random Effect - Pedestrians")),
       opacity = 0.7,
       group = "BYM2 Random Effect - Pedestrians"
     )
@@ -3001,6 +3066,7 @@ create_interactive_map <- function(cma_da) {
         "Lane Length",
         "Major Roads",
         "Intersections",
+        "Cycling Infrastructure",
         # Population
         "Population",
         # Model results
@@ -3013,24 +3079,50 @@ create_interactive_map <- function(cma_da) {
     # Hide all layers except All Injury Crashes
     hideGroup(
       c(
+        "All Injury Crashes",
         "Cyclist Injury Crashes",
         "Pedestrian Injury Crashes",
         "VanDIX",
         "Lane Length",
         "Major Roads",
         "Intersections",
+        "Cycling Infrastructure",
         "Population",
         "BYM2 Random Effect - All Injuries",
         "BYM2 Random Effect - Cyclists",
         "BYM2 Random Effect - Pedestrians"
       )
-    )
+    ) %>%
+    # Add CSS to improve the legend styling
+    htmlwidgets::onRender("
+      function(el, x) {
+        // Add some CSS to make legends more readable
+        var css = document.createElement('style');
+        css.type = 'text/css';
+        css.innerHTML = `
+          .info.legend {
+            max-width: 300px;
+            line-height: 1.4;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 12px 10px;
+            border-radius: 5px;
+          }
+          .info.legend span {
+            display: block;
+            margin-bottom: 8px;
+            text-align: left;
+          }
+        `;
+        document.head.appendChild(css);
+      }
+    ")
   
   return(m)
 }
 
 # Create and save the map
 map <- create_interactive_map(cma_da)
+map
 
 # Save with custom HTML template to ensure proper initial state
 saveWidget(
