@@ -1731,6 +1731,66 @@ ggplot(regions_data, aes(x = log(total_lane_length_km) , y = log(total_populatio
   theme_minimal()
 
 
+region <- cma_da_tibble %>% 
+  left_join(regions_data,by = "region") %>% 
+  mutate(name = case_when(Cluster==1~"Mid-Sized",
+                          Cluster==2~"Small",
+                          Cluster==3~"Northeast",
+                          Cluster==4~"Mid-Sized",
+                          Cluster==5~"Vancouver")) %>% 
+    group_by(region,name) %>% 
+  summarise(population = sum(population),
+            lane_kilometres = sum(total_lane_length_km.x),
+            landarea = sum(landarea),
+            n_casualty_claims = sum(n_casualty_claims),
+            n_cyclist_casualty_claims = sum(n_cyclist_casualty_claims),
+                        n_pedestrian_casualty_claims = sum(n_pedestrian_casualty_claims)
+
+            ) %>% 
+  ungroup()
+
+region %>% 
+  group_by(name) %>% 
+  summarise(total_population = sum(population),
+            min_population = min(population),
+            max_population = max(population),
+            
+            total_lane_kilometres = sum(lane_kilometres),
+            min_lane_kilometres = min(lane_kilometres),
+            max_lane_kilometres = max(lane_kilometres),
+            
+            total_landarea = sum(landarea),
+            min_landarea = min(landarea),
+            max_landarea = max(landarea),
+            
+            total_n_casualty_claims = sum(n_casualty_claims),
+            min_n_casualty_claims = min(n_casualty_claims),
+            max_n_casualty_claims = max(n_casualty_claims),
+            
+           total_n_cyclist_casualty_claims = sum(n_cyclist_casualty_claims),
+            min_n_cyclist_casualty_claims = min(n_cyclist_casualty_claims),
+            max_n_cyclist_casualty_claims = max(n_cyclist_casualty_claims),
+            
+                       
+           total_n_pedestrian_casualty_claims = sum(n_pedestrian_casualty_claims),
+            min_n_pedestrian_casualty_claims = min(n_pedestrian_casualty_claims),
+            max_n_pedestrian_casualty_claims = max(n_pedestrian_casualty_claims),
+           
+  ) %>% 
+  mutate(total_population_p = total_population/sum(total_population)*100,
+         total_lane_kilometres_p = total_lane_kilometres/sum(total_lane_kilometres)*100,
+                  total_landarea_p = total_landarea/sum(total_landarea)*100,
+         total_n_casualty_claims_p = total_n_casualty_claims/sum(total_n_casualty_claims)*100,
+         total_n_cyclist_casualty_claims_p = total_n_cyclist_casualty_claims/sum(total_n_cyclist_casualty_claims)*100,
+         total_n_pedestrian_casualty_claims_p = total_n_pedestrian_casualty_claims/sum(total_n_cyclist_casualty_claims)*100
+
+         
+  ) %>% 
+  View()
+
+
+
+
 
 total_row <- cma_da_tibble %>%
  summarise(
@@ -2093,12 +2153,41 @@ ggsave(device = "jpg",
   width = 140*1.25,
   dpi = 600)
 
-pedestrian_irr_fp
+pedestrian_irr_fp 
+
+
 
 
 ```
 
+```{r}
 
+
+a <- all_vandix_irr_adjusted %>% 
+  mutate(mode = "All")
+
+p <- pedestrian_vandix_irr_adjusted %>% 
+  mutate(mode = "Pedestrian")
+
+
+
+c <- cyclist_vandix_irr_adjusted %>% 
+  mutate(mode = "Cyclist") 
+
+bind_rows(a, p) %>%
+  bind_rows(c) %>%
+  group_by(region) %>%
+  
+  mutate(
+    Region = factor(region, levels = region_levels), pc = irr_mean /
+      irr_mean[1]) %>%
+  select(Region, mode, `IRR (95% CI)`, pc) %>%
+    arrange(Region, mode) %>%
+  print(n = 100)
+
+```
+         
+         
 ```{r,fig.width=190/25.4,fig.height=240/25.4}
 
 
@@ -2958,7 +3047,7 @@ saveWidget(
 ### Figure 1 - VanDIX Ridgeline
 
 
-```{r figure 2, fig.height=12.75591,fig.width=10.09843}
+```{r sm figure 1, fig.height=12.75591,fig.width=10.09843}
 table2_data <- cma_da_tibble %>%
   mutate(
     vandix_z_c = cut(
@@ -3100,7 +3189,6 @@ ggsave(device = "jpg",
 
  vandix_distribution
 ```
-           
 
 
 ## Table 1 - Model Comparison of Fit Metrics
