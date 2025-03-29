@@ -1,5 +1,5 @@
 ---
-title: "Associations Between Neighbourhood Socioeconomic Status and Road Traffic Injury Risk in Urban Areas of British Columbia - R Code"
+title: "Evaluating regional variation in socio-spatial inequalities in motor-vehicle injury collisions - R Code"
 author: "Michael Branion-Calles"
 date: "`r Sys.Date()`"
 output:
@@ -3127,9 +3127,9 @@ map
 # Save with custom HTML template to ensure proper initial state
 saveWidget(
   map,
-  "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Supplementary Material/Supplementary Material 1.html",
+  "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Supplementary Material/Supplementary Material 1/index.html",
   selfcontained = TRUE,
-  title = "Spatial Distribution of Model Inputs and Outputs"
+  title = "Spatial Distribution of BYM2 Models Inputs and Outputs"
 )
 ```
 
