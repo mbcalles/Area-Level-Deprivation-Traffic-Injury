@@ -252,12 +252,12 @@ vandix_irr <- function(m.samp) {
 
 # Read spatial data for dissemination areas in British Columbia
 bc_boundary <- st_read(
-  "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Processed Data/da_v4_2021b.gpkg"
+  "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Processed Data/da_v4_2021c.gpkg"
 ) %>% 
   st_union()
 
 cma_da <- st_read(
-  "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Processed Data/da_v4_2021b.gpkg"
+  "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Processed Data/da_v4_2021c.gpkg"
 ) %>%
   mutate(cma_name = ifelse(
     str_detect(cmaname, "metropolitan influenced zone"),
@@ -426,6 +426,91 @@ csd %>%
             mean_pop = pop/n) %>% 
   arrange(desc(pop))
 
+```
+
+## Variance in estimated counts through randomization
+
+```{r}
+
+claims_da_join <-  read_csv(file = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Processed Data/intersection_base_claimscasualty_crash.csv") %>%
+  mutate(dauid = as.character(dauid))
+
+random_assignment <-  read_csv(file = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Processed Data/intersection_remainder_assignmentcasualty_crash.csv") %>%
+  mutate(dauid = as.character(dauid))
+
+base <- claims_da_join %>% 
+    filter(dauid %in% cma_da$dauid) %>% # dauid's included
+    # Sum up base claims per DA (the evenly distributed portion)
+    group_by(dauid,n_intersections) %>% 
+    summarise(base_claims = sum(base_claims)) 
+
+claims_on_border <- claims_da_join %>% 
+      filter(dauid %in% cma_da$dauid) %>% # dauid's included
+  filter(n_intersections>1) %>% 
+  summarise(base_claims=sum(base_claims))
+
+
+claims_not_on_border <- claims_da_join %>% 
+    filter(dauid %in% cma_da$dauid) %>% # dauid's included
+    filter(n_intersections==1) %>% 
+  summarise(base_claims=sum(base_claims))
+
+claims_on_border_random_assign <- random_assignment %>% 
+      filter(dauid %in% cma_da$dauid)
+
+sum(claims_on_border$base_claims) + sum(claims_not_on_border$base_claims) + sum(claims_on_border_random_assign$remainder_claims) == sum(cma_da$n_casualty_claims)
+  
+
+sum(claims_on_border$base_claims) / (sum(claims_on_border$base_claims) + sum(claims_not_on_border$base_claims) + sum(claims_on_border_random_assign$remainder_claims)) * 100 # percent of injuries on border of at least two DAs evenly distributed
+
+sum(claims_on_border_random_assign$remainder_claims) / (sum(claims_on_border$base_claims) + sum(claims_not_on_border$base_claims) + sum(claims_on_border_random_assign$remainder_claims)) * 100 # percent of injuries on border that are randomly assigned (does not go evenly into bordering DAs)
+
+sum(claims_not_on_border$base_claims) / (sum(claims_on_border$base_claims) + sum(claims_not_on_border$base_claims) + sum(claims_on_border_random_assign$remainder_claims)) * 100 # percent of injuries on border of at least two DAs evenly distributed
+
+
+
+######### Variation in counts due to random assignment
+
+n_casualty_claims_iteration <- readRDS( "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Processed Data/iterate_casualty_claims.rds")
+
+casualty_claims_total_variance <- map(n_casualty_claims_iteration,~right_join(.x,cma_da %>% st_drop_geometry(.)) %>% 
+                                        replace_na(list(total_claims =0)))
+  
+  
+casualty_claims_total_variance <- casualty_claims_total_variance %>% 
+    bind_rows(.id = "iteration") %>%
+  group_by(dauid) %>%
+  summarise(
+    # For n_casualty_claims
+    n = n(),
+    min_n_casualty = min(total_claims),
+    max_n_casualty = max(total_claims),
+    range = max_n_casualty - min_n_casualty,
+    iqr = IQR(total_claims),
+  )
+
+casualty_claims_total_variance %>% 
+  summarise(n = n(),
+            median_range = median(range),
+            q25 = quantile(range,probs = 0.25),
+            q75 = quantile(range,probs = 0.75)
+            )
+
+casualty_claims_total_variance %>%
+  ggplot(aes(x=range))+
+  geom_histogram(color = "black",fill = "#257D98",binwidth = 1)+
+  scale_fill_carto_d(name = "Quartiles", palette = "Geyser") + 
+  theme_ipsum_es(axis_title_size = 12,
+                 grid = "XxYy",
+                 ticks = TRUE) +
+  scale_x_continuous(breaks = c(seq(0,10,by = 2)),
+                     labels = c(seq(0,10,by = 2)))+ 
+  ylab("Number of DAs") +
+  xlab("Range in Estimated Counts") + 
+  labs(title="Distribution of DA variability in estimated motor-vehicle injury crashes across 50 simulated datasets")
+
+
+# rcartocolor::carto_pal(n =7,"TealGrn")[7]
 
 ```
 
@@ -607,6 +692,15 @@ cma_da <- cma_da %>%
 # Final conversion to sp object and add unique identifier
 cma_sp <- as(cma_da, "Spatial")
 cma_sp$ui <- 1:nrow(cma_sp@data)
+
+cma_da %>% 
+  st_drop_geometry() %>% 
+  summarise(median_pop = median(population),
+            q25 = quantile(population, 0.25),
+            q75 = quantile (population, 0.75)
+            )
+            
+
 ```
 
 ### Spatial Dependency in each crash type
@@ -1501,9 +1595,6 @@ vandix_irr_pedestrian_crashes_models <- left_join(pedestrian_vandix_irr_unadjust
   )
 
 n <- nrow(cma_da)
-cma_da$re_all_adjusted <-  rnorm(n, mean = 1, sd = 1)
-cma_da$re_cyclist_adjusted <-   rnorm(n, mean = 1, sd = 1)
-cma_da$re_pedestrian_adjusted <-   rnorm(n, mean = 1, sd = 1)
 
 cma_da$re_all_adjusted <-  m5_all$summary.random$ui[1:nrow(cma_da), "mean"]
 cma_da$re_cyclist_adjusted <-  m5_cyclist_zip$summary.random$ui[1:nrow(cma_da), "mean"]
@@ -1920,9 +2011,6 @@ table1
 save_as_image(table1 %>% autofit(), "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Tables/regional_injury_be_descriptive.svg", expand = 1, res = 150)
 
 
-table1
-
-table1
 ```
 
 ### Table 2 - Injury Crashes 
@@ -2022,9 +2110,6 @@ table2 <- cma_da_tibble %>%
 
 table2
 save_as_image(table2 %>% autofit(), "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Tables/regional_injury_crashes_descriptive.svg", expand = 1, res = 150)
-
-
-table2
 ```
 
 

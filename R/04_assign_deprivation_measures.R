@@ -1,6 +1,6 @@
 # Script Title: 03_assign_deprivation_measures.R
 # Author: Michael Branion-Calles
-# Date: October 2024
+# Date: March 2025
 # Description: This script loads Census Geography for British Columbia, calculates various deprivation measures, 
 # and merges these with existing geographic data.
 
@@ -14,7 +14,7 @@ library(janitor)
 wd <- getwd()
 
 # Load previously processed Census geography data
-bc_da <- st_read(paste0(wd, "/Processed Data/da_v3_2021b.gpkg")) 
+bc_da <- st_read(paste0(wd, "/Processed Data/da_v3_2021c.gpkg")) 
 
 bc_da_census <- read_csv(paste0(wd, "/Processed Data/census_2021.csv")) %>% 
   rename(dauid = geo_name) %>% 
@@ -137,4 +137,4 @@ bc_da <- bc_da %>%
   left_join(msdi, by = "dauid") 
 
 
-st_write(bc_da, dsn = paste0(wd, "/Processed Data/da_v4_2021b.gpkg"))
+st_write(bc_da, dsn = paste0(wd, "/Processed Data/da_v4_2021c.gpkg"))
