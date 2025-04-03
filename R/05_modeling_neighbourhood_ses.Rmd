@@ -430,7 +430,7 @@ csd %>%
 
 ## Variance in estimated counts through randomization
 
-```{r}
+```{r, fig.height=12.75591,fig.width=10.09843}
 
 claims_da_join <-  read_csv(file = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Processed Data/intersection_base_claimscasualty_crash.csv") %>%
   mutate(dauid = as.character(dauid))
@@ -507,10 +507,9 @@ casualty_claims_total_variance %>%
                      labels = c(seq(0,10,by = 2)))+ 
   ylab("Number of DAs") +
   xlab("Range in Estimated Counts") + 
-  labs(title="Distribution of DA variability in estimated motor-vehicle injury crashes across 50 simulated datasets")
+  labs(title="Distribution of range in motor-vehicle injury crashes across 50 simulated datasets for all DAs")
 
 
-# rcartocolor::carto_pal(n =7,"TealGrn")[7]
 
 ```
 
@@ -2290,64 +2289,77 @@ pedestrian_irr_fp
 
 all_irr <- bind_rows(
  all_vandix_irr_unadjusted %>% mutate(Model = "Unadjusted"),
-  all_vandix_irr_minimally_adjusted %>% mutate(Model = "Minimally Adjusted"),
+  all_vandix_irr_minimally_adjusted %>% mutate(Model = "Minimally\nAdjusted"),
   all_vandix_irr_adjusted %>% mutate(Model = "Adjusted")) %>% 
-  mutate(`type` = "All")
+  mutate(`type` = "All Motor Vehicle")
 
 
 pedestrian_irr <-    bind_rows(
  pedestrian_vandix_irr_unadjusted %>% mutate(Model = "Unadjusted"),
-  pedestrian_vandix_irr_minimally_adjusted %>% mutate(Model = "Minimally Adjusted"),
+  pedestrian_vandix_irr_minimally_adjusted %>% mutate(Model = "Minimally\nAdjusted"),
   pedestrian_vandix_irr_adjusted %>% mutate(Model = "Adjusted"))  %>% 
-  mutate(`type` = "Pedestrian")
+  mutate(`type` = "Pedestrian-Motor Vehicle")
 
 cyclist_irr <-    bind_rows(
  cyclist_vandix_irr_unadjusted %>% mutate(Model = "Unadjusted"),
-  cyclist_vandix_irr_minimally_adjusted %>% mutate(Model = "Minimally Adjusted"),
+  cyclist_vandix_irr_minimally_adjusted %>% mutate(Model = "Minimally\nAdjusted"),
   cyclist_vandix_irr_adjusted %>% mutate(Model = "Adjusted"))  %>% 
-  mutate(`type` = "Cyclist")
+  mutate(`type` = "Cyclist-Motor Vehicle")
 
-all_modes <- bind_rows(all_irr,cyclist_irr,pedestrian_irr) %>% 
-  mutate(Region = factor(region,levels = region_levels %>% rev()),
-         Model = factor(Model, levels = c("Unadjusted","Minimally Adjusted","Adjusted"))) %>% 
+# remotes::install_github("clauswilke/colorblindr")
+okabe_ito <- c("#E69F00","#56B4E9","#009E73","#F5C710","#0072B2","#D55E00","#CC79A7","#999999","#000000")
+
+all_modes <- bind_rows(all_irr, cyclist_irr, pedestrian_irr) %>% 
+  mutate(Region_formatted = stringr::str_replace_all(region, " ", "\n"),
+         Region_formatted = ifelse(region == "Vancouver-Fraser Valley", 
+                                  "Vancouver-\nFraser Valley", 
+                                  Region_formatted),
+         Region = factor(Region_formatted, 
+                        levels = sapply(region_levels, function(x) {
+                          if(x == "Vancouver-Fraser Valley") {
+                            return("Vancouver-\nFraser Valley")
+                          } else {
+                            return(stringr::str_replace_all(x, " ", "\n"))
+                          }
+                        })),
+         Model = factor(Model, levels = c("Adjusted", "Minimally\nAdjusted", "Unadjusted"))) %>% 
   ggplot(aes(x = Region, y = irr_mean, color = Model)) +
-    geom_hline(yintercept = 1,linetype = "dashed", colour = "grey30") + 
-  geom_point(position = position_dodge(width = 0.5), size = 1.5) +
+  geom_hline(yintercept = 1, linetype = "dashed", colour = "grey30") + 
+  geom_point(position = position_dodge(width = 0.75), size = 1) +
   geom_errorbar(aes(ymin = irr_low, ymax = irr_high), 
-                 position = position_dodge(width = 0.5), width = 0.25) +
+               position = position_dodge(width = 0.75), width = 0.25) +
   facet_wrap(~type, nrow = 1) +
   scale_y_log10() + 
-  labs(y = "Incidence Rate Ratio (95% Credible Interval)",
+  labs(y = "Incidence Rate Ratio",
        x = "Region",
-       title = "Association Between Deprivation and Motor Vehicle Crashes in British Columbia (2019-2023)",
-       subtitle = "Crashes Involving All Road Users, Cyclists, and Pedestrians By Region",
        color = "Model") +
-  scale_color_ipsum() +
-  theme_ipsum_es(plot_title_size = 12,subtitle_size = 10,
-                 
-                 base_size = 9
-                  ) + 
+  scale_colour_manual(
+    values = okabe_ito[c(1,3,5)],
+    breaks = c("Unadjusted", "Minimally\nAdjusted", "Adjusted")
+  ) +
+  theme_ipsum_es(plot_title_size = 12, subtitle_size = 10, base_size = 9) + 
   theme(axis.title.x = element_text(size = 10),
         axis.title.y = element_text(size = 10),
-        legend.position = "bottom",
-        # Remove whitespace between facets
+        legend.position = "right",
         panel.spacing = unit(0.5, "lines"),
-        # Reduce plot margins
-        plot.margin = margin(5, 5, 5, 5),
-        # Reduce space around the facet strips
+        plot.margin = margin(5, 7, 5, 5),
         strip.text = element_text(margin = margin(2, 2, 2, 2))
   ) + 
+  scale_x_discrete(limits = rev) +
   coord_flip()
+
+all_modes
+# colorblindr::cvd_grid(all_modes)
 
 ggsave(device = "jpg",
   filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/vandix_injury_irr_forest_plot.jpg",
   plot = all_modes,
   units = "mm",
-  height = 190*1.25,
-  width = 190*1.25,
+  height = 140,
+  width = 240,
   dpi = 600)
 
-all_modes
+
 
 ```
 
@@ -3207,7 +3219,6 @@ create_interactive_map <- function(cma_da) {
 
 # Create and save the map
 map <- create_interactive_map(cma_da)
-map
 
 # Save with custom HTML template to ensure proper initial state
 saveWidget(
