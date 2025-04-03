@@ -1,4 +1,4 @@
-# Geographic Variability in the Relationship Between Neighbourhood Deprivation and Traffic Injury Risk Across British Columbia's Urban Regions
+# Evaluating regional variation in socioeconomic inequalities in motor-vehicle injury collisions
 
 *Note: This is a work in progress. Scripts and documentation are being actively developed and updated.*
 
@@ -51,7 +51,7 @@ library(ggspatial)
 
 ## Data Files
 ### Available Data
-- `da_v4_2021.gpkg`: Final aggregated dataset at dissemination area level
+- `da_v4_2021c.gpkg`: Final aggregated dataset at dissemination area level
 - `dra_bridges_tunnels.gpkg`: Infrastructure dataset for bridges and tunnels
 
 ### Data Processing Pipeline
@@ -62,7 +62,7 @@ To run the final statistical analysis:
 
 1. Ensure you have required R packages installed
 2. Load the provided datasets:
-   - `da_v4_2021.gpkg`
+   - `da_v4_2021c.gpkg`
    - `dra_bridges_tunnels.gpkg`
 3. Run `05_modeling_neighbourhood_ses.R`
 
