@@ -1,4 +1,4 @@
-# Evaluating regional variation in socioeconomic inequalities in motor-vehicle injury collisions
+# Evaluating regional variation in neighbourhood socioeconomic inequalities in motor-vehicle injury collisions
 
 *Note: This is a work in progress. Scripts and documentation are being actively developed and updated.*
 
