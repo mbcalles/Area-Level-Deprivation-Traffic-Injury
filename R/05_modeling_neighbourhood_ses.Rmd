@@ -1,5 +1,5 @@
 ---
-title: "Evaluating regional variation in socio-spatial inequalities in motor-vehicle injury collisions - R Code"
+title: "Evaluating regional variation in neighbourhood socioeconomic inequalities in motor-vehicle injury collisions - R Code"
 author: "Michael Branion-Calles"
 date: "`r Sys.Date()`"
 output:
@@ -21,6 +21,7 @@ tictoc::tic()
 # font_import()  # Uncomment if you haven't done this yet
 # loadfonts(device = "win")
 library(extrafont)
+library(cowplot)
 library(hrbrthemes)
 library(INLA)         
 library(tidyverse)  
@@ -1598,7 +1599,85 @@ n <- nrow(cma_da)
 cma_da$re_all_adjusted <-  m5_all$summary.random$ui[1:nrow(cma_da), "mean"]
 cma_da$re_cyclist_adjusted <-  m5_cyclist_zip$summary.random$ui[1:nrow(cma_da), "mean"]
 cma_da$re_pedestrian_adjusted <-  m5_pedestrian_zip$summary.random$ui[1:nrow(cma_da), "mean"]
+
+
+
+### LISA for Random Effects
+
+
+
+cma_listw <- nb2listw(include.self(cma_nb),style = "B")
+
+# Cluster analysis - unexplained variation in all injuries 
+
+re_all_adjusted_gstar <- localG_perm(
+  cma_da$re_all_adjusted,
+  cma_listw,
+  nsim = 100000,
+  zero.policy = attr(listw, "zero.policy"),
+  spChk = NULL,
+  alternative = "two.sided",
+  iseed = NULL,
+  fix_i_in_Gstar_permutations = TRUE,
+  no_repeat_in_row = FALSE
+)
+
+alpha = 0.001
+
+re_all_adjusted_gstar_internals <- as_tibble(attr(re_all_adjusted_gstar,"internals")) %>% 
+  mutate(cluster = case_when(`Pr(z != E(Gi)) Sim` <alpha &  StdDev.Gi > 0 ~ "High",
+                             `Pr(z != E(Gi)) Sim` <alpha & StdDev.Gi < 0 ~ "Low",
+                             TRUE ~ "Not significant"
+                             ))
+cma_da$re_all_adjusted_gstar_cluster <- as.factor(re_all_adjusted_gstar_internals$cluster)
+
+
+
+# Cluster analysis - unexplained variation in cyclist injuries 
+
+re_cyclist_adjusted_gstar <- localG_perm(
+  cma_da$re_cyclist_adjusted,
+  cma_listw,
+  nsim = 100000,
+  zero.policy = attr(listw, "zero.policy"),
+  spChk = NULL,
+  alternative = "two.sided",
+  iseed = NULL,
+  fix_i_in_Gstar_permutations = TRUE,
+  no_repeat_in_row = FALSE
+)
+
+re_cyclist_adjusted_gstar_internals <- as_tibble(attr(re_cyclist_adjusted_gstar,"internals")) %>% 
+  mutate(cluster = case_when(`Pr(z != E(Gi)) Sim` <alpha &  StdDev.Gi > 0 ~ "High",
+                             `Pr(z != E(Gi)) Sim` <alpha & StdDev.Gi < 0 ~ "Low",
+                             TRUE ~ "Not significant"
+                             ))
+cma_da$re_cyclist_adjusted_gstar_cluster <- as.factor(re_cyclist_adjusted_gstar_internals$cluster)
+
+
+# Cluster analysis - unexplained variation in pedestrian injuries 
+
+re_pedestrian_adjusted_gstar <- localG_perm(
+  cma_da$re_pedestrian_adjusted,
+  cma_listw,
+  nsim = 100000,
+  zero.policy = attr(listw, "zero.policy"),
+  spChk = NULL,
+  alternative = "two.sided",
+  iseed = NULL,
+  fix_i_in_Gstar_permutations = TRUE,
+  no_repeat_in_row = FALSE
+)
+
+re_pedestrian_adjusted_gstar_internals <- as_tibble(attr(re_pedestrian_adjusted_gstar,"internals")) %>% 
+  mutate(cluster = case_when(`Pr(z != E(Gi)) Sim` <alpha &  StdDev.Gi > 0 ~ "High",
+                             `Pr(z != E(Gi)) Sim` <alpha & StdDev.Gi < 0 ~ "Low",
+                             TRUE ~ "Not significant"
+                             ))
+cma_da$re_pedestrian_adjusted_gstar_cluster <- as.factor(re_pedestrian_adjusted_gstar_internals$cluster)
 ```
+
+
 
 
 # Study Area
@@ -1736,7 +1815,7 @@ study_area <- ggplot() +
 
 ggsave(
   device = "svg",
-  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/figure_1_study_area.svg",
+  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/Figure_1.jpg",
   plot = study_area,
   units = "mm",
   height = 140*1.1,
@@ -1747,7 +1826,7 @@ ggsave(
 
 
 ggsave(
-  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/figure_1_study_area.jpg",
+  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/Figure_1.jpg",
   plot = study_area,
   units = "mm",
   height = 140*1.1,
@@ -2283,6 +2362,8 @@ pedestrian_irr_fp
 
 ```
 
+### Figure 2 - Forest Plot of IRRs
+
 ```{r,fig.width=190/25.4,fig.height=240/25.4}
 
 
@@ -2352,7 +2433,7 @@ all_modes
 # colorblindr::cvd_grid(all_modes)
 
 ggsave(device = "jpg",
-  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/vandix_injury_irr_forest_plot.jpg",
+  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/Figure_2.jpg",
   plot = all_modes,
   units = "mm",
   height = 140,
@@ -2400,8 +2481,204 @@ print(doc_t, target = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Tr
 
 ```
 
+### Figure 3 - Example of Spatial Clustering
 
 
+```{r}
+
+
+vfv_da <- cma_da %>%
+  # filter(cmaname   == "Vancouver") %>%
+  filter(region == "Vancouver-Fraser Valley") %>% 
+  st_transform(crs = 26910)
+
+vfv_clusters_all <- vfv_da %>%
+  filter(re_all_adjusted_gstar_cluster != "Not significant")
+vfv_clusters_cyclists <- vfv_da %>%
+  filter(re_cyclist_adjusted_gstar_cluster != "Not significant")
+vfv_clusters_pedestrians <- vfv_da %>%
+  filter(re_pedestrian_adjusted_gstar_cluster != "Not significant")
+
+ bbox <- st_bbox(vfv_da)
+
+ 
+bc_boundary_utm <- bc_boundary %>%   st_transform(crs = 26910)
+
+# Add to your existing ggplot
+v_all <- ggplot() +
+  geom_sf(data = bc_boundary_utm, fill = "grey90") +
+  geom_sf(data = vfv_da,
+          aes(fill = re_all_adjusted),
+          colour = NA) +
+  geom_sf(
+    data = vfv_clusters_all,
+    aes(colour = re_all_adjusted_gstar_cluster),
+    fill = NA,
+    linewidth = 0.25
+  ) +
+  scale_fill_gradient2(
+    name = expression("Random Effect: "*italic(u[i]) + italic(v[i])) ,
+    midpoint = 0,
+    high = "#CA562C",
+    mid = "#F6EDBD",
+    low = "#008080",
+    limits = c(-4.75,3.75)
+      
+  ) +
+  scale_colour_manual(name = expression(italic(G)[i]^"✱" * " Cluster"),
+                      values = c("darkred", "darkblue", "grey90")
+                      ) +
+  guides(fill = guide_colorbar(title.vjust = .7,order = 1),
+         colour = guide_legend(title.vjust = .7,order = 2, 
+                               label.position = "bottom")
+         )+
+  theme_void(base_size = 10) +
+  theme(
+    legend.position = "bottom",
+    legend.box.margin = margin(10,0,15,0),
+    legend.margin = margin(0,60,0,0)#,
+    # legend.spacing.x = unit(20, "pt")
+    ) + 
+  coord_sf(
+          xlim = c(bbox$xmin, bbox$xmax),
+          ylim = c(bbox$ymin, bbox$ymax)
+        ) 
+  
+
+# Add to your existing ggplot
+v_cyclist <- ggplot() +
+  geom_sf(data = bc_boundary_utm, fill = "grey90") +
+  geom_sf(data = vfv_da,
+          aes(fill = re_cyclist_adjusted),
+          colour = NA) +
+  geom_sf(
+    data = vfv_clusters_cyclists,
+    aes(colour = re_cyclist_adjusted_gstar_cluster),
+    fill = NA,
+    linewidth = 0.25
+  ) +
+  scale_fill_gradient2(
+    name = "Posterior Mean\nof BYM2\nRandom Effect",
+    midpoint = 0,
+    high = "#CA562C",
+    mid = "#F6EDBD",
+    low = "#008080",
+    limits = c(-4.75,3.75)
+      
+  ) +
+  scale_colour_manual(name = "Gi* Cluster",
+                      values = c("darkred", "darkblue", "grey90")) +
+  
+  theme_void(base_size = 10) +
+  theme(
+    legend.position = "none",
+  ) + 
+  coord_sf(
+          xlim = c(bbox$xmin, bbox$xmax),
+          ylim = c(bbox$ymin, bbox$ymax)
+        )
+
+# Add to your existing ggplot
+v_pedestrian <- ggplot() +
+  geom_sf(data = bc_boundary_utm, fill = "grey90") +
+  geom_sf(data = vfv_da,
+          aes(fill = re_pedestrian_adjusted),
+          colour = NA) +
+  geom_sf(
+    data = vfv_clusters_pedestrians,
+    aes(colour = re_pedestrian_adjusted_gstar_cluster),
+    fill = NA,
+    linewidth = 0.25
+  ) +
+  scale_fill_gradient2(
+    name = "Posterior Mean\nof BYM2\nRandom Effect",
+    midpoint = 0,
+    high = "#CA562C",
+    mid = "#F6EDBD",
+    low = "#008080",
+    limits = c(-4.75,3.75)
+      
+  ) +
+  scale_colour_manual(name = "Gi* Cluster",
+                      values = c("darkred", "darkblue", "grey90")) +
+  
+  theme_void(base_size = 10) +
+  theme(
+   legend.position = "none"
+  ) + 
+  coord_sf(
+          xlim = c(bbox$xmin, bbox$xmax),
+          ylim = c(bbox$ymin, bbox$ymax)
+        )
+
+
+legend <- cowplot::get_plot_component(v_all, 'guide-box-bottom',return_all = TRUE)
+
+re_map <- plot_grid(
+  v_all + theme(legend.position = "none"),
+  v_cyclist,
+  v_pedestrian,
+  legend,  # Adjust the legend panel to shift it off-center (right)
+  ncol = 1,
+  labels = c("A","B","C",""),
+  rel_heights = c(1,1,1,0.18),
+  vjust = 1.5,
+  hjust = -.8,
+  label_x = .001,label_size = 16
+)
+
+
+ggsave(device = "jpg",
+  filename = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-Traffic-Injury/Figures/Figure_3.jpg",
+  plot = re_map,
+  units = "mm",
+  height = 195,
+  width = 190,
+  dpi = 300)
+
+
+```
+
+#### DA Size and Random Effect
+
+```{r}
+ggplot(cma_da,aes(x=log(population/landarea),y=re_all_adjusted)) + 
+  geom_hline(yintercept = 0,linetype ="dashed") + 
+  geom_point(alpha=0.25) + 
+  stat_smooth(method = "lm",colour="darkred") + 
+  scale_y_continuous(limits = c(-5,4))
+
+
+tidy(lm(re_all_adjusted ~ log(population/landarea),data = cma_da))
+
+
+ggplot(cma_da,aes(x=log(population/landarea),y=re_cyclist_adjusted)) + 
+  geom_hline(yintercept = 0,linetype ="dashed") + 
+  geom_point(alpha=0.25) + 
+  stat_smooth(method = "lm",colour="darkred") + 
+  scale_y_continuous(limits = c(-5,4))
+
+
+tidy(lm(re_cyclist_adjusted ~ log(population/landarea),data = cma_da))
+
+ggplot(cma_da,aes(x=log(population/landarea),y=re_pedestrian_adjusted)) + 
+  geom_hline(yintercept = 0,linetype ="dashed") + 
+  geom_point(alpha=0.25) + 
+  stat_smooth(method = "lm",colour="darkred") + 
+  scale_y_continuous(limits = c(-5,4))
+
+tidy(lm(re_pedestrian_adjusted ~ log(population/landarea),data = cma_da))
+
+
+
+
+
+
+
+
+
+
+```
 
 
 # Supplementary Material 1
@@ -2491,7 +2768,27 @@ create_map_configs <- function() {
       title = "Adjusted Model for Pedestrian-Involved Injury Crashes",
       palette = "bym2",
       type = "continuous"
+    ),
+     all_injury_bym2 = list(
+      fill_var = "re_all_adjusted_gstar_cluster",
+      title = "Gi* Clustering for Adjusted BYM2 Random Effect: All Injury Crashes",
+      palette = "Safe",
+      type = "discrete"
+    ),
+    cyclist_injury_bym2 = list(
+      fill_var = "re_cyclist_adjusted_gstar_cluster",
+      title = "Gi* Clustering for Adjusted BYM2 Random Effect: Cyclist Injury Crashes",
+      palette = "Safe",
+      type = "discrete"
+    ),
+    pedestrian_injury_bym2 = list(
+      fill_var = "re_pedestrian_adjusted_gstar_cluster",
+      title = "Gi* Clustering for Adjusted BYM2 Random Effect: Pedestrian Injury Crashes",
+      palette = "Safe",
+      type = "discrete"
     )
+    
+    
   )
 }
 
@@ -2608,7 +2905,11 @@ captions <- c(
   "Population",
   "Adjusted Model BYM2 Random Effect for Injury Crashes",
   "Adjusted Model BYM2 Random Effect for Cyclist Involved Injury Crashes",
-  "Adjusted Model BYM2 Random Effect for Pedestrian Involved Injury Crashes"
+  "Adjusted Model BYM2 Random Effect for Pedestrian Involved Injury Crashes",
+  "Adjusted Model BYM2 Random Effect for Injury Crashes - Gi* Clusters",
+  "Adjusted Model BYM2 Random Effect for Cyclist Involved Injury Crashes-Gi* Clusters",
+  "Adjusted Model BYM2 Random Effect for Pedestrian Involved Injury Crashes-Gi* Clusters"
+  
 )
 
 # Function to save maps and add to document
@@ -2755,6 +3056,7 @@ regions <- cma_da %>%
 nb_colours <- 16
 colour_pal <- colorRampPalette(carto_pal(12, "Antique"))(nb_colours)
 dark2_pal <- RColorBrewer::brewer.pal(8,name = "Dark2")[c(8,1)]
+cluster_pal <- c("darkred","darkblue","grey90")
 
 create_interactive_map <- function(cma_da) {
 
@@ -2826,8 +3128,11 @@ create_interactive_map <- function(cma_da) {
     "Intersections" = "Number of intersections within each dissemination area",
     "Cycling Infrastructure" = "Presence or absence of bicycling specific infrastructure derived from The OpenStreetMap based Canadian Bikeway Comfort and Safety (Can-BICS) Classification System.",
     "BYM2 Random Effect - All Injuries" = "Modified Besag-York-Mollie (BYM2) random effect is the sum of spatial and unstructured random effects on log scale. Values greater than 0 indicate neighbourhoods with more injury crashes than expected after adjusting for explanatory variables in the adjusted model; values less than 0 indicate fewer crashes than expected.",
+    "BYM2 Random Effect - All Injuries - Clusters" = "Significant spatial clusters of the BYM2 random effect for adjusted all injury crash model, identified using the Getis-Ord Gi statistic. The Gi statistic indicates areas where high or low values are surrounded by similar values. Statistical significance was assessed using Monte-Carlo simulation with 99,999 permutations and a threshold of 0.001, tested against the null hypothesis of complete spatial randomness. Red clusters represent areas with significantly higher BYM2 values (more injury crashes than expected) after accounting for deprivation and built environment factors, while blue clusters indicate significantly lower BYM2 values (fewer crashes than expected)",
     "BYM2 Random Effect - Cyclists" = "Modified Besag-York-Mollie (BYM2) random effect is the sum of spatial and unstructured random effects on log scale. Values greater than 0 indicate neighbourhoods with more injury crashes than expected after adjusting for explanatory variables in the adjusted model; values less than 0 indicate fewer crashes than expected.",
-    "BYM2 Random Effect - Pedestrians" = "Modified Besag-York-Mollie (BYM2) random effect is the sum of spatial and unstructured random effects on log scale. Values greater than 0 indicate neighbourhoods with more injury crashes than expected after adjusting for explanatory variables in the adjusted model; values less than 0 indicate fewer crashes than expected."
+    "BYM2 Random Effect - Cyclists - Clusters" = "Significant spatial clusters of the BYM2 random effect for adjusted cyclist injury crash model, identified using the Getis-Ord Gi statistic. The Gi statistic indicates areas where high or low values are surrounded by similar values. Statistical significance was assessed using Monte-Carlo simulation with 99,999 permutations and a threshold of 0.001, tested against the null hypothesis of complete spatial randomness. Red clusters represent areas with significantly higher BYM2 values (more injury crashes than expected) after accounting for deprivation and built environment factors, while blue clusters indicate significantly lower BYM2 values (fewer crashes than expected)",
+    "BYM2 Random Effect - Pedestrians" = "Modified Besag-York-Mollie (BYM2) random effect is the sum of spatial and unstructured random effects on log scale. Values greater than 0 indicate neighbourhoods with more injury crashes than expected after adjusting for explanatory variables in the adjusted model; values less than 0 indicate fewer crashes than expected.",
+    "BYM2 Random Effect - Pedestrians - Clusters" = "Significant spatial clusters of the BYM2 random effect for adjusted pedestrian injury crash model, identified using the Getis-Ord Gi statistic. The Gi statistic indicates areas where high or low values are surrounded by similar values. Statistical significance was assessed using Monte-Carlo simulation with 99,999 permutations and a threshold of 0.001, tested against the null hypothesis of complete spatial randomness. Red clusters represent areas with significantly higher BYM2 values (more injury crashes than expected) after accounting for deprivation and built environment factors, while blue clusters indicate significantly lower BYM2 values (fewer crashes than expected)"
   )
   
   # Function to create HTML title with description
@@ -2843,12 +3148,13 @@ create_interactive_map <- function(cma_da) {
   # Create color palette function for regions
   pal_region <- colorFactor(palette = colour_pal, domain = cma_da_wgs84$region)
   pal_cycling_infrastructure <- colorFactor(palette = dark2_pal, domain = cma_da_wgs84$bike_infra_cat)
+  pal_cluster <- colorFactor(palette = cluster_pal, domain = cma_da_wgs84$re_all_adjusted_gstar_cluster)
 
   # Create base map
   m <- leaflet(cma_da_wgs84) %>%
     # Add base tiles
     addTiles(group = "OpenStreetMap") %>%
-    addProviderTiles(providers$CartoDB.DarkMatter, group = "CartoDB") %>%
+    addProviderTiles(providers$CartoDB.Positron, group = "CartoDB") %>%
     addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
     # Add polygons
     addPolygons(
@@ -3148,6 +3454,73 @@ create_interactive_map <- function(cma_da) {
       group = "BYM2 Random Effect - Pedestrians"
     )
   
+    # 4. BYM2 Model Clustering
+    
+  m <- m %>% 
+     addPolygons(
+      fillColor = ~ pal_cluster(re_all_adjusted_gstar_cluster),
+      weight = 0.5,
+      opacity = 1,
+      color = pal_cluster,
+      fillOpacity = 0.7,
+      popup = ~ paste0("Significant Clustering: ", re_all_adjusted_gstar_cluster),
+      # Added region value to popup
+      group = "BYM2 Random Effect - All Injuries - Clusters"
+    ) %>%
+    # Add legend
+    addLegend(
+      position = "bottomright",
+      pal = pal_cluster,
+      values = ~ re_all_adjusted_gstar_cluster,
+      title = HTML(create_title_with_desc("BYM2 Random Effect - All Injuries - Clusters")),
+      opacity = 0.9,
+      group = "BYM2 Random Effect - All Injuries - Clusters"
+    )
+  
+      
+  m <- m %>% 
+     addPolygons(
+      fillColor = ~ pal_cluster(re_cyclist_adjusted_gstar_cluster),
+      weight = 0.5,
+      opacity = 1,
+      color = pal_cluster,
+      fillOpacity = 0.7,
+      popup = ~ paste0("Significant Clustering: ", re_cyclist_adjusted_gstar_cluster),
+      # Added region value to popup
+      group = "BYM2 Random Effect - Cyclists - Clusters"
+    ) %>%
+    # Add legend
+    addLegend(
+      position = "bottomright",
+      pal = pal_cluster,
+      values = ~ re_cyclist_adjusted_gstar_cluster,
+      title = HTML(create_title_with_desc("BYM2 Random Effect - Cyclists - Clusters")),
+      opacity = 0.9,
+      group = "BYM2 Random Effect - Cyclists - Clusters"
+    )
+  
+      
+  m <- m %>% 
+     addPolygons(
+      fillColor = ~ pal_cluster(re_pedestrian_adjusted_gstar_cluster),
+      weight = 0.5,
+      opacity = 1,
+      color = pal_cluster,
+      fillOpacity = 0.7,
+      popup = ~ paste0("Significant Clustering: ", re_pedestrian_adjusted_gstar_cluster),
+      # Added region value to popup
+      group = "BYM2 Random Effect - Pedestrians - Clusters"
+    ) %>%
+    # Add legend
+    addLegend(
+      position = "bottomright",
+      pal = pal_cluster,
+      values = ~ re_pedestrian_adjusted_gstar_cluster,
+      title = HTML(create_title_with_desc("BYM2 Random Effect - Pedestrians - Clusters")),
+      opacity = 0.9,
+      group = "BYM2 Random Effect - Pedestrians - Clusters"
+    )
+  
   # Add layer controls with grouped variables and Population after Intersections
   m <- m %>%
     addLayersControl(
@@ -3168,8 +3541,12 @@ create_interactive_map <- function(cma_da) {
         "Population",
         # Model results
         "BYM2 Random Effect - All Injuries",
+        "BYM2 Random Effect - All Injuries - Clusters",
         "BYM2 Random Effect - Cyclists",
-        "BYM2 Random Effect - Pedestrians"
+        "BYM2 Random Effect - Cyclists - Clusters",
+        "BYM2 Random Effect - Pedestrians",
+        "BYM2 Random Effect - Pedestrians - Clusters"
+        
       ),
       options = layersControlOptions(collapsed = FALSE, groupCheckboxes = TRUE)
     ) %>%
@@ -3186,8 +3563,11 @@ create_interactive_map <- function(cma_da) {
         "Cycling Infrastructure",
         "Population",
         "BYM2 Random Effect - All Injuries",
+        "BYM2 Random Effect - All Injuries - Clusters",
         "BYM2 Random Effect - Cyclists",
-        "BYM2 Random Effect - Pedestrians"
+                "BYM2 Random Effect - Cyclists - Clusters",
+        "BYM2 Random Effect - Pedestrians",
+                "BYM2 Random Effect - Pedestrians - Clusters"
       )
     ) %>%
     # Add CSS to improve the legend styling
@@ -3219,7 +3599,7 @@ create_interactive_map <- function(cma_da) {
 
 # Create and save the map
 map <- create_interactive_map(cma_da)
-
+map
 # Save with custom HTML template to ensure proper initial state
 saveWidget(
   map,
@@ -3228,7 +3608,6 @@ saveWidget(
   title = "Spatial Distribution of BYM2 Models Inputs and Outputs"
 )
 ```
-
 
 
 # Supplementary Material 2
@@ -3531,6 +3910,8 @@ st2
 
 ```
 
+The parameter sigma, the overall variance of the combined random effects term was exp(0.8) = 2.2, indicating substantial overall variance. Nearly half of that variance, parameter rho, was spatially structured exp(0.4) = 49%.
+
 ### Table 3 -  Cyclist Involved Injury Crashes
 
 ```{r model details cyclist}
@@ -3663,7 +4044,6 @@ print(doc_sm2, target = "C:/Users/micha/Documents/GitHub/Area-Level-Deprivation-
 
 ```{r,	echo = FALSE, message = FALSE, warning = FALSE}
 rt <- tictoc::toc(quiet = TRUE)
-
 paste0("Total run time: ", round(rt$toc / 60, 2), " minutes")
 ## datetime
 Sys.time()
