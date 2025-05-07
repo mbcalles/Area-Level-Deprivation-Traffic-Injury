@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: |
+  If you use this repository in your research or work, please cite it as follows. Note that this code is associated with a paper that is currently under submission.
+authors:
+  - family-names: Branion-Calles
+    given-names: Michael
+title: "Evaluating Regional Variation in Neighbourhood Socioeconomic Inequalities in Motor-Vehicle Injury Collisions"
+version: 0.1.0
+date-released: 2025-05-07
+repository: https://github.com/mbcalles/Area-Level-Deprivation-Traffic-Injury
+license: MIT
+url: https://github.com/mbcalles/Area-Level-Deprivation-Traffic-Injury
+citation:
+  type: software
+  format: "APA"
+  citation: |
+    Calles, M. B. (2025). Evaluating Regional Variation in Neighbourhood Socioeconomic Inequalities in Motor-Vehicle Injury Collisions [Unpublished manuscript]. GitHub. https://github.com/mbcalles/Area-Level-Deprivation-Traffic-Injury
+  bibtex: |
+    @misc{calles2025regional,
+      author = {Calles, M. B.},
+      title = {Evaluating Regional Variation in Neighbourhood Socioeconomic Inequalities in Motor-Vehicle Injury Collisions},
+      year = {2025},
+      url = {https://github.com/mbcalles/Area-Level-Deprivation-Traffic-Injury},
+      note = {Unpublished manuscript, under review}
+    }
