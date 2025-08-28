@@ -38,6 +38,9 @@ library(ggridges)
 library(officer)
 library(leaflet)
 library(htmlwidgets)
+# remotes::install_github("inbo/inlatools")
+library(inlatools)
+
 
 # Functions ---------------------------------------------------------------
 
@@ -712,22 +715,22 @@ listw <- nb2listw(cma_nb)
 
 # Test for spatial autocorrelation in all casualty claims
 # Null hypothesis: no spatial autocorrelation
-all_cc_mi <- moran.test(cma_da$n_casualty_claims, listw)
+all_cc_mi <- moran.mc(cma_da$n_casualty_claims, listw, nsim =999)
 all_cc_mi  # Print results for all casualties
 
 # Test for spatial autocorrelation specifically in cyclist casualty claims
-cyc_cc_mi <- moran.test(cma_da$n_cyclist_casualty_claims, listw)
+cyc_cc_mi <- moran.mc(cma_da$n_cyclist_casualty_claims, listw, nsim =999)
 cyc_cc_mi  # Print results for cyclist casualties
 
 # Test for spatial autocorrelation specifically in pedestrian casualty claims
-pd_cc_mi <- moran.test(cma_da$n_pedestrian_casualty_claims, listw)
+pd_cc_mi <- moran.mc(cma_da$n_pedestrian_casualty_claims, listw, nsim =999)
 pd_cc_mi  # Print results for pedestrian casualties
-
+pd_cc_mi -> moran_result
 extract_moran_stats <- function(moran_result) {
   tibble(
-    morans_i = round(moran_result$estimate["Moran I statistic"], 3),
-    z_score = round(moran_result$statistic, 2),
-    p_value = ifelse(moran_result$p.value < 0.001, 
+    morans_i = round(moran_result$statistic["statistic"], 3),
+    rank = paste0(moran_result$parameter,"/", length(moran_result$res)),
+    pseudo_p_value = ifelse(moran_result$p.value < 0.001, 
                      "<0.001", 
                      round(moran_result$p.value, 3))
   )
@@ -741,13 +744,13 @@ morans_table <- bind_rows(
   mutate(extract_moran_stats(pd_cc_mi), casualty_type = "Pedestrian Involved Injury Crashes"),
 ) %>%
   # Reorder columns
-  select(casualty_type, morans_i, z_score, p_value) %>%
+  select(casualty_type, morans_i, rank, pseudo_p_value) %>%
   # Rename columns for presentation
   rename(
     "Casualty Type" = casualty_type,
     "Moran's I" = morans_i,
-    "z-score" = z_score,
-    "p-value" = p_value
+    "Obs. Rank" = rank,
+    "Psuedo p-value" = pseudo_p_value
   )
 
 morans_table %>% 
@@ -756,7 +759,7 @@ morans_table %>%
 
 ```
 
-Spatial autocorrelation analysis showed that all types of casualty claims were spatially clustered. Cyclist casualty claims had the highest spatial dependence (Moran's I = 0.372, z = 49.92, p < 0.001), followed by pedestrian casualty claims (Moran's I = 0.291, z = 38.84, p < 0.001) and all casualty claims (Moran's I = 0.249, z = 33.29, p < 0.001). 
+Spatial autocorrelation analysis showed that all types of casualty claims were spatially clustered. Cyclist casualty claims had the highest spatial dependence (Moran's I = 0.386, pseduo p-value = 0.001), followed by pedestrian casualty claims (Moran's I = 0.308, pseduo p-value = 0.001) and all casualty claims (Moran's I = 0.245, pseduo p-value = 0.001). 
 
 
 ### BYM2 Models
@@ -859,7 +862,8 @@ m3_all <- inla(
   verbose = FALSE
 )
 
-############## ZIP models
+
+############# ZIP models
 
 #### Unadjusted model - no random effects
 
@@ -896,6 +900,7 @@ m3_all_zip <- inla(
   control.predictor = list(compute = TRUE),
   verbose = FALSE
 )
+
 
 ####### Model Comparisons
 
@@ -1675,9 +1680,44 @@ re_pedestrian_adjusted_gstar_internals <- as_tibble(attr(re_pedestrian_adjusted_
                              TRUE ~ "Not significant"
                              ))
 cma_da$re_pedestrian_adjusted_gstar_cluster <- as.factor(re_pedestrian_adjusted_gstar_internals$cluster)
+
+### Moran's I on residuals 
+
+all_resid_mi <- moran.mc(residuals(m5_all, "pearson"),
+         listw = listw,
+         nsim = 999)
+all_resid_mi
+cyclist_resid_mi <- moran.mc(residuals(m5_cyclist_zip, "pearson"),
+         listw = listw,
+         nsim = 999)
+cyclist_resid_mi
+pedestrian_resid_mi <-moran.mc(residuals(m5_pedestrian_zip, "pearson"),
+         listw = listw,
+         nsim = 999)
+pedestrian_resid_mi
+
+# Create table of results
+morans_table <- bind_rows(
+  # Add each test result with a casualty type label
+    mutate(extract_moran_stats(all_resid_mi), casualty_type = "All Injury Crashes"),
+  mutate(extract_moran_stats(cyclist_resid_mi), casualty_type = "Cyclist Involved Injury Crashes"),
+  mutate(extract_moran_stats(pedestrian_resid_mi), casualty_type = "Pedestrian Involved Injury Crashes"),
+) %>%
+  # Reorder columns
+  select(casualty_type, morans_i, rank, pseudo_p_value) %>%
+  # Rename columns for presentation
+  rename(
+    "Casualty Type" = casualty_type,
+    "Moran's I" = morans_i,
+    "Obs. Rank" = rank,
+    "Psuedo p-value" = pseudo_p_value
+  )
+
+morans_table %>% 
+  flextable() %>% 
+  theme_booktabs()
+
 ```
-
-
 
 
 # Study Area

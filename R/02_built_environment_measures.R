@@ -20,8 +20,6 @@ bc_da <-
   st_read(paste0(wd, "/Processed Data/da_v1_2021.gpkg"))
 # 'bc_da' contains the census data for the province of British Columbia.
 
-
-
 ######### Intersections
 
 bc_int <- st_read(dsn = paste0(wd,"/Data/DMTI Spatial/2021/RoadJunctionPoint.shp")) %>% 
