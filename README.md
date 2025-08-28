@@ -3,7 +3,7 @@
 *Note: This is a work in progress. Scripts and documentation are being actively developed and updated.*
 
 ## Overview
-This repository contains the analysis code and supplementary materials for a study examining the relationship between socioeconomic status (deprivation) and traffic injury crash incidence across British Columbia, Canada. The analysis focuses on spatial variations at the dissemination area level, employing Bayesian spatial modeling techniques.
+This repository contains the analysis code and supplementary materials for a study examining the relationship between small-area socioeconomic status (deprivation) and traffic injury crash incidence across British Columbia, Canada. The analysis focuses on spatial variations at the dissemination area level, employing Bayesian spatial modeling techniques.
 
 ## Quick Start
 For users interested in running the statistical analysis only, the following files are provided:
@@ -82,8 +82,6 @@ The study employs spatial statistical modeling to analyze the relationship betwe
 Estimated a socieconomic gradient for each crash type in most regions. Region-specific associations between Vancouver Area Deprivation Index and traffic injury crashes in British Columbia (2019-2023) are shown below. Incidence Rate Ratios show crash risk change per standard deviation increase in deprivation from BYM2 Poisson models: unadjusted (no covariates), minimally adjusted (road length), and adjusted (full built environment). Results shown for all injury crashes, crashes involving cyclists, and crashes involving pedestrians, with 95% credible intervals
 
 ![all injuries irr](Figures/vandix_injury_irr_forest_plot.jpg)
-
-*Note: Results and supplementary materials are being actively updated as the analysis progresses.*
 
 ## Citation
 Citation information coming soon.
