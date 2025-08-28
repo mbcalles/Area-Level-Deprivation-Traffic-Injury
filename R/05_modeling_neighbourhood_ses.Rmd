@@ -759,7 +759,7 @@ morans_table %>%
 
 ```
 
-Spatial autocorrelation analysis showed that all types of casualty claims were spatially clustered. Cyclist casualty claims had the highest spatial dependence (Moran's I = 0.386, pseduo p-value = 0.001), followed by pedestrian casualty claims (Moran's I = 0.308, pseduo p-value = 0.001) and all casualty claims (Moran's I = 0.245, pseduo p-value = 0.001). 
+Spatial autocorrelation analysis showed that all types of injury crashes were spatially clustered. Cyclist injury crashes had the highest spatial dependence (Moran's I = 0.386, pseduo p-value = 0.001), followed by pedestrian injury crashes (Moran's I = 0.308, pseduo p-value = 0.001) and all injury crashes (Moran's I = 0.245, pseduo p-value = 0.001). 
 
 
 ### BYM2 Models
@@ -767,9 +767,9 @@ Spatial autocorrelation analysis showed that all types of casualty claims were s
 
 ### Statistical Methods
 
-To model casualty claims across British Columbia, we employed a spatial Poisson regression model with a BYM2 (Besag-York-Mollié) component to account for spatial autocorrelation. The model was implemented using R-INLA (Integrated Nested Laplace Approximation) at the census dissemination area (DA) level (n = 6,225).
+To model injury crashes across British Columbia, we employed a spatial Poisson regression model with a BYM2 (Besag-York-Mollié) component to account for spatial autocorrelation. The model was implemented using R-INLA (Integrated Nested Laplace Approximation) at the census dissemination area (DA) level (n = 6,225).
 
-Let $Y_i$ represent the number of casualty claims in DA $i$. The model is specified as:
+Let $Y_i$ represent the number of injury crashes in DA $i$. The model is specified as:
 
 $Y_i \sim \text{Poisson}(\mu_i)$
 
@@ -779,7 +779,7 @@ where:
 
 $\eta_i = \beta_0 + \beta_1\text{vandix}_i + \sum_{k=1}^8\beta_{2k}\text{region}_{ki} + \sum_{k=1}^8\beta_{3k}(\text{vandix}_i \times \text{region}_{ki}) + \mathbf{X}_i\boldsymbol{\gamma} + u_i$
 
-The model includes 16 regional indicators ($\text{region}_{ki}$) with Vancouver-Squamish serving as the reference category. The coefficient $\beta_{3k}$ represents the region-specific effect of the Vancouver Area Disadvantage Index (VanDIX), capturing how the relationship between disadvantage and casualty claims varies by region.
+The model includes 16 regional indicators ($\text{region}_{ki}$) with Vancouver-Squamish serving as the reference category. The coefficient $\beta_{3k}$ represents the region-specific effect of the Vancouver Area Deprivation Index (VanDIX), capturing how the relationship between deprivation and injury crashes varies by region.
 
 The spatial random effects component $u_i$ follows the BYM2 parameterization:
 
@@ -1719,6 +1719,7 @@ morans_table %>%
 
 ```
 
+Spatial autocorrelation analysis show no evidence of significant spatial autocorrelation in the residuals. Specifically, for all injury crashes, cyclist injury crashes, and pedestrian injury crashes, the Moran’s I statistics were –0.027 (p = 0.999), –0.035 (p = 0.999), and –0.048 (p = 0.999), respectively. 
 
 # Study Area
 
