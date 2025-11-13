@@ -11,7 +11,7 @@ editor_options:
   chunk_output_type: console
 ---
 
-# Load libraries and functions
+# Load Libraries and Functions
 
 ```{r libraries and functions,message=FALSE}
 
@@ -777,9 +777,9 @@ $\log(\mu_i) = \eta_i$
 
 where:
 
-$\eta_i = \beta_0 + \beta_1\text{vandix}_i + \sum_{k=1}^8\beta_{2k}\text{region}_{ki} + \sum_{k=1}^8\beta_{3k}(\text{vandix}_i \times \text{region}_{ki}) + \mathbf{X}_i\boldsymbol{\gamma} + u_i$
+$\eta_i = \beta_0 + \beta_1\text{VanDIX}_i + \sum_{k=2}^{16}\beta_{2k}\text{Region}_{ki} + \sum_{k=2}^{16}\beta_{3k}(\text{VanDIX}_i \times \text{Region}_{ki}) + u_i$
 
-The model includes 16 regional indicators ($\text{region}_{ki}$) with Vancouver-Squamish serving as the reference category. The coefficient $\beta_{3k}$ represents the region-specific effect of the Vancouver Area Deprivation Index (VanDIX), capturing how the relationship between deprivation and injury crashes varies by region.
+The model includes 16 regional indicators ($\text{region}_{ki}$) with Vancouver-Fraser Valley serving as the reference category. The coefficient $\beta_{3k}$ represents the region-specific effect of the Vancouver Area Deprivation Index (VanDIX), capturing how the relationship between deprivation and injury crashes varies by region.
 
 The spatial random effects component $u_i$ follows the BYM2 parameterization:
 
@@ -788,6 +788,7 @@ $u_i = \frac{1}{\sqrt{\tau_u}}(\sqrt{1-\phi}v_i + \sqrt{\phi}w_i)$
 where $v_i$ is an unstructured (iid) random effect and $w_i$ is a structured spatial effect. The spatial neighborhood structure was defined using queen contiguity, where areas sharing at least one boundary point are considered neighbors.
 
 For the hyperparameters, we specified penalized complexity (PC) priors:
+
 - For the precision parameter $\tau_u$: PC prior with parameters (1, 0.001)
 - For the mixing parameter $\phi$: PC prior with parameters (0.5, 0.5)
 
@@ -805,10 +806,10 @@ Model estimation was performed using the R-INLA package, with model fit assessed
 nb2INLA("bc.adj", cma_nb)
 cma_adj <- inla.read.graph(filename = "bc.adj")
 
-
 prior <- list(prec = list(prior = "pc.prec", param = c(1, 0.001)),
               phi = list(prior = "pc", param = c(0.5, 0.5)))
-
+# prior <- list( prec = list(prior = "pc.prec", param = c(0.5 / 0.31, 0.01)), 
+#                phi = list( prior = "pc", param = c(0.5, 2 / 3)))
 
 ############## Poisson models
 
@@ -1064,8 +1065,8 @@ vandix_irr_all_crashes_models <- left_join(all_vandix_irr_unadjusted,
 ################ Cyclist Crashes
 ################################################################
 
-prior <- list(prec = list(prior = "pc.prec", param = c(1, 0.001)),
-              phi = list(prior = "pc", param = c(0.5, 0.5)))
+# prior <- list(prec = list(prior = "pc.prec", param = c(1, 0.001)),
+#               phi = list(prior = "pc", param = c(0.5, 0.5)))
 
 ############## Poisson models
 
@@ -1328,8 +1329,8 @@ vandix_irr_cyclist_crashes_models <- left_join(cyclist_vandix_irr_unadjusted,
 ################ Pedestrian Crashes
 ################################################################
 
-prior <- list(prec = list(prior = "pc.prec", param = c(1, 0.001)),
-              phi = list(prior = "pc", param = c(0.5, 0.5)))
+# prior <- list(prec = list(prior = "pc.prec", param = c(1, 0.001)),
+#               phi = list(prior = "pc", param = c(0.5, 0.5)))
 
 
 ############## Poisson models
@@ -3216,6 +3217,10 @@ create_interactive_map <- function(cma_da) {
       title = HTML(create_title_with_desc("Region")),
       opacity = 0.9,
       group = "Region"
+    ) %>%  
+    addScaleBar(
+      position = "bottomleft",
+      options = scaleBarOptions(metric = TRUE, imperial = FALSE)
     )
   
   # Population Layer
@@ -3589,7 +3594,8 @@ create_interactive_map <- function(cma_da) {
         "BYM2 Random Effect - Pedestrians - Clusters"
         
       ),
-      options = layersControlOptions(collapsed = FALSE, groupCheckboxes = TRUE)
+      options = layersControlOptions(collapsed = TRUE, groupCheckboxes = TRUE),
+      position = "topleft"
     ) %>%
     # Hide all layers except All Injury Crashes
     hideGroup(
@@ -3640,7 +3646,7 @@ create_interactive_map <- function(cma_da) {
 
 # Create and save the map
 map <- create_interactive_map(cma_da)
-map
+# map
 # Save with custom HTML template to ensure proper initial state
 saveWidget(
   map,
