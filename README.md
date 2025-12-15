@@ -64,16 +64,37 @@ To run the final statistical analysis:
    - `dra_bridges_tunnels.gpkg`
 3. Run `05_modeling_neighbourhood_ses.R`
 
-## Methods
-The study employs spatial statistical modeling to analyze the relationship between neighborhood deprivation and traffic injury risk. Key methodological components include:
+## Outcomes and Exposure
 
-- Spatial unit of analysis: Dissemination areas
-- Statistical approach: Bayesian spatial modeling using R-INLA
-- Model specification: Besag-York-Mollie (BYM2) models
-- Analysis categories:
-  - All traffic crashes
-  - Cyclist-involved crashes
-  - Pedestrian-involved crashes
+**Observed outcomes**
+- Dissemination area–level counts of traffic injury crashes involving motor vehicles in British Columbia (2019–2023)
+- Analyzed separately for:
+  - all injury crashes
+  - cyclist–motor vehicle injury crashes
+  - pedestrian–motor vehicle injury crashes
+
+**Exposure**
+- Neighbourhood socioeconomic deprivation measured using the Vancouver Area Neighbourhood Deprivation Index (VanDIX)
+- Census-derived composite index of socioeconomic conditions
+- Standardized to have mean = 0 and standard deviation = 1
+
+**Primary analytic outcome**
+- Region-specific incidence rate ratios (IRRs) describing the association between VanDIX and injury crash incidence
+- IRRs represent the change in crash incidence per one standard deviation increase in deprivation within each region
+
+---
+
+## Methods
+
+- Traffic injury crash counts modeled using Bayesian spatial Poisson regression
+- Spatial autocorrelation accounted for using Besag–York–Mollié (BYM2) models with structured and unstructured random effects
+- Region-specific associations estimated by including an interaction between VanDIX and region
+- Models estimated using Integrated Nested Laplace Approximation (INLA) in R
+- Separate models fit for each crash type
+- Models estimated sequentially as:
+  - unadjusted
+  - minimally adjusted (road length)
+  - fully adjusted (road length + built environment covariates)
 
 ## Results
 
