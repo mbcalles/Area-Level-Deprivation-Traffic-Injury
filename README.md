@@ -82,8 +82,6 @@ To run the final statistical analysis:
 - Region-specific incidence rate ratios (IRRs) describing the association between VanDIX and injury crash incidence
 - IRRs represent the change in crash incidence per one standard deviation increase in deprivation within each region
 
----
-
 ## Methods
 
 - Traffic injury crash counts modeled using Bayesian spatial Poisson regression
